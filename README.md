@@ -407,6 +407,25 @@ The machine-readable schema is the contract for the first identity-record protot
 The technical roadmap will add application code only after the identity model and verification semantics are sufficiently stable.
 
 
+
+### Local Prototype Validation
+
+The repository now contains a dependency-free Python validator for the v0.1 identity model.
+
+From the repository root:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+A single identity record can also be checked directly:
+
+```bash
+python src/nothing_verify.py examples/NTH-000001.json
+```
+
+The validator checks structural rules only. It does **not** independently establish the truth of external evidence.
+
 ---
 
 ## Status
