@@ -1,0 +1,16 @@
+{
+  "nothing_id": "NTH-123456",
+  "version": "0.1",
+  "subject": {
+    "name": "Example Business",
+    "type": "business",
+    "website": "https://example.com"
+  },
+  "claims": [
+    {
+      "claim_id": "CLM-123456",
+      "statement": "Example claim for schema validation.",
+      "status": "SELF-CLAIMED"
+    }
+  ]
+}
