@@ -455,3 +455,10 @@ This project is experimental.
 Nothing in this repository constitutes legal, financial, regulatory, cybersecurity or compliance advice.
 
 Before commercial deployment, the project will require jurisdiction-specific legal, privacy, security and regulatory review.
+
+
+## Engineering Guardrails
+
+The project now has an automated test workflow, a deterministic validator, a threat model and a draft verification protocol. These are intentionally conservative foundations: technical validity is kept separate from evidence-based verification.
+
+The next implementation work should preserve backward compatibility of the v0.1 identity contract. Breaking schema changes should use an explicit version rather than silently changing the meaning of existing records.
