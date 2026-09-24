@@ -1,0 +1,1 @@
+"""NOTHING prototype source package."""
