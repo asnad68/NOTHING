@@ -1,0 +1,9 @@
+{
+  "nothing_id": "NOT-A-NOTHING-ID",
+  "version": "0.1",
+  "subject": {
+    "name": "Invalid Example",
+    "type": "unknown"
+  },
+  "claims": []
+}
