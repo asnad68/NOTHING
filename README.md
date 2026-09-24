@@ -378,6 +378,35 @@ NOTHING follows:
 
 The project should earn trust through transparent verification rather than through slogans.
 
+
+---
+
+## Technical Repository Structure
+
+The prototype is now organized around a small, explicit technical foundation:
+
+```text
+NOTHING/
+├── schema/
+│   └── identity.schema.json
+├── examples/
+│   └── NTH-000001.json
+├── docs/
+│   ├── ARCHITECTURE.md
+│   ├── VERIFICATION.md
+│   └── ROADMAP.md
+├── tests/
+│   └── fixtures/
+│       ├── valid-identity.json
+│       └── invalid-identity.json
+└── SECURITY.md
+```
+
+The machine-readable schema is the contract for the first identity-record prototype. Example and test fixtures are intentionally separated from the schema so future verification code can validate independent records without changing the core contract.
+
+The technical roadmap will add application code only after the identity model and verification semantics are sufficiently stable.
+
+
 ---
 
 ## Status
