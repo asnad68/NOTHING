@@ -1,0 +1,22 @@
+{
+  "nothing_id": "NTH-000001",
+  "version": "0.1",
+  "subject": {
+    "name": "NOTHING Experimental Identity",
+    "type": "business"
+  },
+  "claims": [
+    {
+      "claim_id": "CLM-000001",
+      "statement": "This record is an experimental demonstration of the NOTHING identity model.",
+      "status": "SELF-CLAIMED",
+      "source": {
+        "type": "self_attestation",
+        "reference": "NOTHING project repository"
+      }
+    }
+  ],
+  "revocation": {
+    "status": "NOT_REVOKED"
+  }
+}
