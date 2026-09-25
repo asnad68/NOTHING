@@ -271,6 +271,7 @@ class PostgreSQLNothingStore:
             "updated_at": row["updated_at"],
         }
 
+    @_retry_serializable_method
     @_translate_database_errors
     def set_payment_worker_checkpoint(
         self,
@@ -287,6 +288,33 @@ class PostgreSQLNothingStore:
         if last_ledger_index is not None and last_ledger_index < 0:
             raise ValueError("last_ledger_index cannot be negative")
         with self._transaction(retryable=True) as connection:
+            existing = connection.execute(
+                """
+                SELECT account, last_tx_hash, last_ledger_index
+                FROM payment_worker_checkpoints
+                WHERE worker_name = %s
+                FOR UPDATE
+                """,
+                (worker_name,),
+            ).fetchone()
+            if existing is not None:
+                existing_ledger = existing["last_ledger_index"]
+                if (
+                    existing_ledger is not None
+                    and last_ledger_index is not None
+                    and last_ledger_index < existing_ledger
+                ):
+                    raise ConflictError(
+                        "payment worker checkpoint cannot move backwards"
+                    )
+                if (
+                    existing_ledger == last_ledger_index
+                    and existing["account"] != account
+                ):
+                    raise ConflictError(
+                        "payment worker checkpoint account cannot change at an existing ledger"
+                    )
+
             connection.execute(
                 """
                 INSERT INTO payment_worker_checkpoints(
