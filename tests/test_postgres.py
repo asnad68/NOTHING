@@ -153,6 +153,15 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
             7200,
         )
 
+    def test_payment_worker_checkpoint_rejects_empty_hash(self):
+        with self.assertRaises(ValueError):
+            self.store.set_payment_worker_checkpoint(
+                "checkpoint-empty-hash",
+                "r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2",
+                last_tx_hash="",
+                last_ledger_index=1,
+            )
+
     def test_payment_worker_checkpoint_cannot_move_backwards(self):
         worker = "checkpoint-test"
         account = "r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2"
@@ -403,7 +412,7 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
         with self.store._pool.connection() as connection:
             connection.execute(
                 "DELETE FROM schema_migrations WHERE version = %s",
-                (12,),
+                (13,),
             )
         try:
             self.assertFalse(self.store.health())
@@ -412,7 +421,7 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
                 connection.execute(
                     "INSERT INTO schema_migrations(version) VALUES (%s) "
                     "ON CONFLICT (version) DO NOTHING",
-                    (12,),
+                    (13,),
                 )
         self.assertTrue(self.store.health())
 
@@ -421,7 +430,7 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
             row = connection.execute(
                 "SELECT MAX(version) AS version FROM schema_migrations"
             ).fetchone()
-        self.assertEqual(row["version"], 12)
+        self.assertEqual(row["version"], 13)
 
         identity = self.store.get_identity("NTH-000001")
         self.assertEqual(identity.record["nothing_id"], "NTH-000001")
