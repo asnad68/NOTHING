@@ -383,7 +383,7 @@ The project should earn trust through transparent verification rather than throu
 
 ## Technical Repository Structure
 
-The prototype now has a deliberately separated foundation for identity, evidence, verification events and verification procedures:
+The prototype now separates data contracts, protocol logic, the human verification view and the future API contract:
 
 ```text
 NOTHING/
@@ -402,10 +402,28 @@ NOTHING/
 ├── src/
 │   ├── nothing_verify.py
 │   └── nothing_protocol.py
+├── site/
+│   ├── index.html
+│   ├── verify.html
+│   ├── 404.html
+│   ├── robots.txt
+│   ├── sitemap.xml
+│   ├── assets/
+│   │   ├── app.js
+│   │   └── styles.css
+│   └── data/
+│       └── demo-bundle.json
+├── api/
+│   ├── openapi.json
+│   ├── API-CONTRACT.md
+│   └── examples/
+│       ├── get-identity-200.json
+│       └── error-404.json
 ├── docs/
 │   ├── ARCHITECTURE.md
 │   ├── VERIFICATION.md
 │   ├── VERIFICATION-PROTOCOL.md
+│   ├── VERIFY-WEB.md
 │   ├── EVIDENCE-MODEL.md
 │   ├── VERIFICATION-EVENT-MODEL.md
 │   ├── IDENTITY-EVIDENCE-RELATIONSHIP.md
@@ -415,15 +433,15 @@ NOTHING/
 │   ├── THREAT-MODEL.md
 │   └── ROADMAP.md
 ├── tests/
-│   ├── fixtures/
 │   ├── test_identity.py
 │   ├── test_schema_parity.py
-│   └── test_protocol.py
+│   ├── test_protocol.py
+│   └── test_openapi_contract.py
 ├── requirements-dev.txt
 └── SECURITY.md
 ```
 
-The architecture deliberately separates:
+The architecture deliberately keeps these layers separate:
 
 ```text
 Identity
@@ -437,7 +455,7 @@ Verification Event
 Versioned Procedure
 ```
 
-The repository does not collapse these layers into a universal trust score.
+Verify Web is the human-facing read layer, while `api/openapi.json` is the deployment-neutral machine API contract. The future API server should call the protocol resolver instead of duplicating its rules.
 
 ### Local Prototype Validation
 
@@ -447,29 +465,13 @@ From the repository root:
 python -m unittest discover -s tests -v
 ```
 
-A single identity record can also be checked directly:
-
-```bash
-python src/nothing_verify.py examples/NTH-000001.json
-```
-
 The structural validator checks data contracts only. The protocol resolver checks cross-record relationships and procedure compatibility. Neither one independently proves that an external source is truthful.
 
-### Schema Parity
+### API Contract
 
-Development dependencies are pinned in requirements-dev.txt.
+The first API contract is read-only and versioned under `/v1`. It specifies identity resolution, evidence retrieval, verification-event retrieval and exact procedure-version retrieval, plus errors, ETags, conditional requests, freshness metadata and rate-limit behavior.
 
-The test suite validates the JSON Schema documents using Draft 2020-12, then checks that representative valid and invalid records produce matching results in the JSON Schema validator and the custom structural validators.
-
-### Protocol Resolution
-
-The resolver can assemble:
-
-Identity + Evidence + Verification Events + Procedure Registry
-
-and verify referential integrity, procedure/result compatibility, procedure lifecycle timing and verification-event supersession rules.
-
----
+The API contract intentionally exposes the resolved verification graph instead of a universal trust score.
 
 ## Status
 
@@ -502,6 +504,6 @@ Before commercial deployment, the project will require jurisdiction-specific leg
 
 ## Engineering Guardrails
 
-The project now has an automated test workflow, a deterministic structural validator, JSON Schema parity tests, a cross-record protocol resolver, a versioned verification procedure registry, a threat model and an explicit verification protocol. These are intentionally conservative foundations: technical validity is kept separate from evidence-based verification.
+The project now has an automated test workflow, a deterministic structural validator, JSON Schema parity tests, a cross-record protocol resolver, a versioned verification procedure registry, a Verify Web prototype, an OpenAPI contract, a threat model and an explicit verification protocol. These are intentionally conservative foundations: technical validity is kept separate from evidence-based verification.
 
 The next implementation work should preserve backward compatibility of the v0.1 identity contract. Breaking schema changes should use an explicit version rather than silently changing the meaning of existing records.
