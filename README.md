@@ -469,7 +469,9 @@ The structural validator checks data contracts only. The protocol resolver check
 
 ### API Contract
 
-The first API contract is read-only and versioned under `/v1`. It specifies identity resolution, evidence retrieval, verification-event retrieval and exact procedure-version retrieval, plus errors, ETags, conditional requests, freshness metadata and rate-limit behavior.
+The public API is versioned under `v1`. Public resources are read-only, while `POST /v1/ingestion/bundles` provides a separately authenticated write boundary for identities, evidence and verification events and versioned under `/v1`. It specifies identity resolution, evidence retrieval, verification-event retrieval and exact procedure-version retrieval, plus errors, ETags, conditional requests, freshness metadata and rate-limit behavior.
+
+The write route requires a bearer credential and `Idempotency-Key`, validates the complete affected graph and commits one atomic transaction. Procedures remain outside the ingestion write surface.
 
 The API contract intentionally exposes the resolved verification graph instead of a universal trust score. The HTTP layer is storage-agnostic and now has a durable SQLite reference backend plus a documented PostgreSQL production target.
 
