@@ -665,9 +665,23 @@ class NothingApiHandler(BaseHTTPRequestHandler):
             )
             return
 
-        data = self._billing_invoice_view(invoice)
+        try:
+            snapshot = self.billing_service.get_invoice(
+                invoice_id=invoice.invoice_id,
+                customer_ref=SubscriptionBillingService.customer_ref_for_actor(
+                    principal.actor
+                ),
+            )
+        except StoreError:
+            self._send_problem(
+                503,
+                "BILLING_UNAVAILABLE",
+                "Billing persistence is temporarily unavailable.",
+            )
+            return
+
         payload = {
-            "data": data,
+            "data": self._billing_snapshot_view(snapshot),
             "meta": _meta(
                 demo=self.store.demo,
                 generated_at=datetime.now(timezone.utc).isoformat(),
@@ -677,33 +691,36 @@ class NothingApiHandler(BaseHTTPRequestHandler):
             200,
             payload,
             allow_cache=False,
-            extra_headers={"Idempotent-Replay": "false"},
         )
 
     @staticmethod
-    def _billing_invoice_view(invoice: Any) -> dict[str, Any]:
-        amount_atomic = int(invoice["amount_atomic"])
-        decimals = int(invoice["asset_decimals"])
+    def _iso_datetime(value: Any) -> Any:
+        if isinstance(value, datetime):
+            return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        return value
+
+    @classmethod
+    def _billing_snapshot_view(cls, snapshot: dict[str, Any]) -> dict[str, Any]:
+        amount_atomic = int(snapshot["amount_atomic"])
+        decimals = int(snapshot["asset_decimals"])
         from decimal import Decimal
-        amount_display = format(
+
+        response = dict(snapshot)
+        response["amount_atomic"] = str(amount_atomic)
+        response["amount"] = format(
             Decimal(amount_atomic).scaleb(-decimals),
             "f",
         )
-        return {
-            "invoice_id": invoice["invoice_id"],
-            "plan_code": invoice["plan_code"],
-            "asset_code": invoice["asset_code"],
-            "network": invoice["network"],
-            "asset_kind": invoice["asset_kind"],
-            "amount_atomic": str(amount_atomic),
-            "amount": amount_display,
-            "asset_decimals": decimals,
-            "destination": invoice["destination"],
-            "routing_mode": invoice["routing_mode"],
-            "routing_reference": invoice["routing_reference"],
-            "status": "open",
-            "expires_at": invoice["expires_at"],
-        }
+        response["expires_at"] = cls._iso_datetime(response["expires_at"])
+        response["paid_at"] = cls._iso_datetime(response["paid_at"])
+
+        entitlement = response.get("entitlement")
+        if entitlement is not None:
+            entitlement = dict(entitlement)
+            for key in ("starts_at", "expires_at", "activated_at"):
+                entitlement[key] = cls._iso_datetime(entitlement.get(key))
+            response["entitlement"] = entitlement
+        return response
 
     def _get_billing_invoice(self, invoice_id: str, instance: str) -> None:
         if self.billing_service is None:
@@ -736,10 +753,13 @@ class NothingApiHandler(BaseHTTPRequestHandler):
 
         self._send(
             200,
-            {"data": snapshot, "meta": _meta(
-                demo=self.store.demo,
-                generated_at=datetime.now(timezone.utc).isoformat(),
-            )},
+            {
+                "data": self._billing_snapshot_view(snapshot),
+                "meta": _meta(
+                    demo=self.store.demo,
+                    generated_at=datetime.now(timezone.utc).isoformat(),
+                ),
+            },
             allow_cache=False,
         )
 
