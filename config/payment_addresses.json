@@ -1,6 +1,6 @@
 {
   "version": "0.1",
-  "status": "manual-crypto-receiving",
+  "status": "receive-only-crypto-with-xrp-automatic-settlement",
   "warning": "These are public receiving addresses. Never store private keys, seed phrases, signing secrets, or exchange API secrets in this repository.",
   "assets": {
     "XRP": {
