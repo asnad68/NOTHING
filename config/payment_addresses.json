@@ -1,0 +1,40 @@
+{
+  "version": "0.1",
+  "status": "receive-only-crypto-with-xrp-automatic-settlement",
+  "warning": "These are public receiving addresses. Never store private keys, seed phrases, signing secrets, or exchange API secrets in this repository.",
+  "assets": {
+    "XRP": {
+      "network": "XRPL",
+      "routing_mode": "xrp_destination_tag",
+      "address": "r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2"
+    },
+    "USDT": {
+      "network": null,
+      "address": "0xE1c90171271B5325beE02592ACc50A510448d03E",
+      "enabled": false,
+      "activation_required": "Set the exact settlement network before accepting USDT payments."
+    },
+    "ETH": {
+      "network": "Ethereum",
+      "routing_mode": "manual_shared",
+      "address": "0xE1c90171271B5325beE02592ACc50A510448d03E"
+    },
+    "BTC": {
+      "network": "Bitcoin",
+      "routing_mode": "manual_shared",
+      "address": "3ABUrDAmi6w9TRsHuwFgdcDBLvXUzbAfZY"
+    }
+  },
+  "payment_rules": {
+    "display_addresses_publicly": true,
+    "accept_payment_without_network_confirmation": false,
+    "private_keys_in_repo": false,
+    "automatic_payment_confirmation": true,
+    "automatic_settlement": {
+      "XRP": true,
+      "ETH": false,
+      "BTC": false,
+      "USDT": false
+    }
+  }
+}

@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: nothing-api
+  namespace: nothing
+spec:
+  type: ClusterIP
+  selector:
+    app: nothing-api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

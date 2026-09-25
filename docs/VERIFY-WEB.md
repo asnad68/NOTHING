@@ -58,3 +58,16 @@ For a project repository, the expected default Pages URL is:
 `https://asnad68.github.io/NOTHING/`
 
 The repository owner must ensure the Pages source is configured to use **GitHub Actions** in repository Settings → Pages. GitHub Pages supports static files and custom domains; server-side Python or PHP is not required for this prototype.
+
+## Write boundary
+
+Verify Web is intentionally read-only.
+
+Business onboarding, evidence submission and verification-event publication occur through the authenticated ingestion API. The browser must never receive the ingestion bearer credential and must never call \`POST /v1/ingestion/bundles\`.
+
+The production dependency remains:
+
+\`Verify Web → GET /v1/identity/{nothing_id} → resolver-backed API\`
+
+This keeps public verification separate from controlled data mutation.
+

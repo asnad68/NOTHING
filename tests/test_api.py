@@ -3,7 +3,7 @@ import json
 import threading
 import unittest
 
-from src.nothing_api import build_server
+from src.nothing_api import AuthConfigurationError, build_server
 
 
 class ReferenceApiHttpTests(unittest.TestCase):
@@ -68,6 +68,19 @@ class ReferenceApiHttpTests(unittest.TestCase):
         self.assertEqual(payload["code"], "NOT_FOUND")
         self.assertEqual(payload["status"], 404)
 
+    def test_identity_verification_history_endpoint_returns_full_event_timeline(self) -> None:
+        response, body = self.request(
+            "/v1/identity/NTH-000001/verification-events"
+        )
+        self.assertEqual(response.status, 200)
+        self.assertTrue(response.getheader("ETag"))
+        payload = json.loads(body)
+        self.assertEqual(payload["data"]["nothing_id"], "NTH-000001")
+        self.assertEqual(
+            [event["id"] for event in payload["data"]["events"]],
+            ["VER-000001"],
+        )
+
     def test_evidence_event_and_procedure_endpoints(self) -> None:
         paths = (
             "/v1/evidence/EVD-000001",
@@ -129,6 +142,56 @@ class ReferenceApiHttpTests(unittest.TestCase):
         self.assertEqual(response.status, 200)
         self.assertEqual(json.loads(body)["status"], "ready")
 
+
+    def test_multi_tenant_mode_fails_closed(self) -> None:
+        import src.nothing_api as api_module
+
+        old = api_module.TENANCY_MODE
+        api_module.TENANCY_MODE = "multi-tenant"
+        try:
+            with self.assertRaises(AuthConfigurationError):
+                build_server("127.0.0.1", 0)
+        finally:
+            api_module.TENANCY_MODE = old
+
+    def test_http_log_sanitizes_query_strings(self) -> None:
+        import io
+        from contextlib import redirect_stdout
+
+        from src.nothing_api import NothingApiHandler
+
+        handler = object.__new__(NothingApiHandler)
+        handler.command = "GET"
+        handler.path = "/v1/billing/invoices?secret=do-not-log"
+        handler.request_version = "HTTP/1.1"
+        handler._nothing_request_id = "request-test"
+
+        stream = io.StringIO()
+        with redirect_stdout(stream):
+            handler.log_message("%s", handler.path)
+
+        line = stream.getvalue()
+        self.assertIn("/v1/billing/invoices", line)
+        self.assertNotIn("secret=do-not-log", line)
+
+    def test_proxy_header_is_not_trusted_by_default(self) -> None:
+        import src.nothing_api as api_module
+        from email.message import Message
+        from src.nothing_api import NothingApiHandler
+
+        handler = object.__new__(NothingApiHandler)
+        handler.headers = Message()
+        handler.headers["X-Forwarded-For"] = "203.0.113.99"
+        handler.client_address = ("198.51.100.7", 12345)
+
+        old = api_module.TRUST_PROXY_HEADERS
+        api_module.TRUST_PROXY_HEADERS = False
+        try:
+            self.assertEqual(handler._client_key(), "198.51.100.7")
+            api_module.TRUST_PROXY_HEADERS = True
+            self.assertEqual(handler._client_key(), "203.0.113.99")
+        finally:
+            api_module.TRUST_PROXY_HEADERS = old
+
 if __name__ == "__main__":
     unittest.main()
-

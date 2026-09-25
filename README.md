@@ -264,9 +264,16 @@ The prototype does **not** enable:
 - Bank transfers
 - Card checkout
 
-The long-term commercial model may explore **cryptocurrency-only settlement**, subject to applicable legal, tax, sanctions, AML/CFT and virtual-asset-service requirements in the relevant jurisdictions.
+The repository now contains a receive-only cryptocurrency settlement boundary designed for controlled deployment:
 
-**No real payment processing is active in the current prototype.**
+- XRP on XRPL supports invoice-specific DestinationTag routing on the supplied treasury address.
+- Ethereum and Bitcoin adapters are implemented, but automatic settlement remains disabled for the currently supplied shared addresses.
+- USDT remains disabled until its exact settlement network is configured.
+- Payment events, invoice allocation, entitlement activation, idempotency, finality handling and an authenticated billing API are persisted through PostgreSQL.
+
+This code is **deployment-ready but not a claim that a production payment service is already live**. Production activation still requires infrastructure deployment, managed authentication, secret injection, database configuration, operational monitoring, reconciliation and jurisdiction-specific legal/compliance review.
+
+The long-term commercial model may explore **cryptocurrency-only settlement**, subject to applicable legal, tax, sanctions, AML/CFT and virtual-asset-service requirements in the relevant jurisdictions.
 
 ---
 
@@ -469,7 +476,9 @@ The structural validator checks data contracts only. The protocol resolver check
 
 ### API Contract
 
-The first API contract is read-only and versioned under `/v1`. It specifies identity resolution, evidence retrieval, verification-event retrieval and exact procedure-version retrieval, plus errors, ETags, conditional requests, freshness metadata and rate-limit behavior.
+The public API is versioned under `v1`. Public resources are read-only, while `POST /v1/ingestion/bundles` provides a separately authenticated write boundary for identities, evidence and verification events. The API contract specifies identity resolution, evidence retrieval, verification-event retrieval and exact procedure-version retrieval, plus errors, ETags, conditional requests, freshness metadata and rate-limit behavior.
+
+The write route requires a bearer credential and `Idempotency-Key`, validates the complete affected graph and commits one atomic transaction. Procedures remain outside the ingestion write surface.
 
 The API contract intentionally exposes the resolved verification graph instead of a universal trust score. The HTTP layer is storage-agnostic and now has a durable SQLite reference backend plus a documented PostgreSQL production target.
 

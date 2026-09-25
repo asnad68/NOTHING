@@ -3,8 +3,8 @@
   "info": {
     "title": "NOTHING Verification API",
     "version": "1.0.0",
-    "summary": "Read-only API contract for NOTHING business identity verification.",
-    "description": "Deployment-neutral API contract for resolving a NOTHING identity into claims, evidence references, verification events and versioned procedures. The API does not turn structural validity into a universal trust score. The API layer is storage-agnostic and can run against the demo filesystem backend or durable persistence."
+    "summary": "NOTHING verification, authenticated ingestion and billing API",
+    "description": "Deployment-neutral API contract for resolving a NOTHING identity into claims, evidence references, verification events and versioned procedures. The API does not turn structural validity into a universal trust score. Production authenticated writes use JWT access tokens and scope authorization. Authenticated billing provides a customer-scoped price catalog, invoice creation and entitlement reads; settlement itself is performed by the receive-only payment observation pipeline and PostgreSQL billing core."
   },
   "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
   "paths": {
@@ -381,6 +381,601 @@
           }
         }
       }
+    },
+    "/v1/ingestion/bundles": {
+      "post": {
+        "tags": [
+          "Ingestion"
+        ],
+        "summary": "Atomically ingest authenticated protocol records",
+        "description": "Accepts identities, evidence and verification events through a separately authenticated write boundary. Procedures are not writable through this endpoint. The complete affected graph is validated before a transaction commits.",
+        "operationId": "postIngestionBundle",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IngestionBundleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The ingestion transaction was accepted or replayed idempotently.",
+            "headers": {
+              "X-NOTHING-Ingestion-ID": {
+                "$ref": "#/components/headers/IngestionId"
+              },
+              "Idempotent-Replay": {
+                "$ref": "#/components/headers/IdempotentReplay"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request or missing/invalid idempotency key.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer credential is missing or invalid.",
+            "headers": {
+              "WWW-Authenticate": {
+                "$ref": "#/components/headers/WWWAuthenticate"
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated access token is valid but lacks the required write-ingestion permission.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Idempotency conflict or immutable-record conflict.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the deployment size limit.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content type is not application/json.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The protocol bundle cannot be accepted as a coherent graph.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Write-ingestion rate limit exceeded.",
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/RetryAfter"
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authenticated ingestion is not configured or persistence is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/billing/invoices": {
+      "post": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "Create a customer-scoped payment invoice",
+        "description": "Creates a payment invoice from an operator-controlled active price. The client cannot choose customer_ref, receiving destination or routing reference. The authenticated principal is mapped to an opaque customer reference.",
+        "operationId": "createBillingInvoice",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BillingInvoiceCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Invoice created or idempotently replayed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingInvoiceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed billing request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer credential is missing or invalid.",
+            "headers": {
+              "WWW-Authenticate": {
+                "$ref": "#/components/headers/WWWAuthenticate"
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The access token lacks billing permission.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested active plan/price does not exist.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Idempotency conflict.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the billing request limit.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content type is not application/json.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Billing persistence is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/billing/invoices/{invoice_id}": {
+      "get": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "Retrieve one customer-scoped invoice",
+        "operationId": "getBillingInvoice",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/BillingInvoiceId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current invoice/payment status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingInvoiceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid invoice identifier.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer credential is missing or invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The access token lacks billing permission.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invoice not found for the authenticated customer.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded.",
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/RetryAfter"
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Billing persistence is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/billing/entitlements": {
+      "get": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "List active entitlements for the authenticated customer",
+        "operationId": "listBillingEntitlements",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Effective active entitlements.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntitlementListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer credential is missing or invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The access token lacks billing permission.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded.",
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/RetryAfter"
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Billing persistence is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/billing/prices": {
+      "get": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "List active billing prices",
+        "operationId": "listBillingPrices",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active customer-selectable prices without treasury routing secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingPriceListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer credential is missing or invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The access token lacks billing permission.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded.",
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/RetryAfter"
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Billing persistence is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/identity/{nothing_id}/verification-events": {
+      "get": {
+        "tags": [
+          "Verification"
+        ],
+        "summary": "List the verification-event history for one identity",
+        "operationId": "listIdentityVerificationEvents",
+        "security": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/NothingId"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Verification-event history for the requested identity.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationEventHistoryResponse"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The representation has not changed.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Last-Modified": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid NOTHING identifier.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested identity does not exist.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded.",
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/RetryAfter"
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -423,6 +1018,27 @@
         "schema": {
           "type": "string"
         }
+      },
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": true,
+        "description": "Client-selected printable ASCII request key. The same key must not be reused for a different request by the same authenticated actor.",
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[\\x21-\\x7E]{1,255}$"
+        }
+      },
+      "BillingInvoiceId": {
+        "name": "invoice_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
       }
     },
     "headers": {
@@ -450,6 +1066,26 @@
         "schema": {
           "type": "integer",
           "minimum": 1
+        }
+      },
+      "WWWAuthenticate": {
+        "description": "Authentication challenge for the bearer credential required by write ingestion.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "IngestionId": {
+        "description": "Stable identifier assigned to the accepted ingestion transaction.",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "IdempotentReplay": {
+        "description": "Present with value true when the response was served from the stored idempotency record.",
+        "schema": {
+          "type": "string",
+          "const": "true"
         }
       }
     },
@@ -1094,6 +1730,554 @@
             "const": "1"
           }
         }
+      },
+      "IngestionBundleRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "identities",
+          "evidence",
+          "verification_events"
+        ],
+        "properties": {
+          "identities": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/IdentityIngestionRecord"
+            }
+          },
+          "evidence": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/EvidenceIngestionRecord"
+            }
+          },
+          "verification_events": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/VerificationEventIngestionRecord"
+            }
+          }
+        }
+      },
+      "IdentityIngestionRecord": {
+        "type": "object",
+        "minProperties": 1,
+        "additionalProperties": true,
+        "description": "Protocol identity record. Normative field validation remains schema/identity.schema.json and the runtime protocol validator.",
+        "x-protocol-schema": "schema/identity.schema.json"
+      },
+      "EvidenceIngestionRecord": {
+        "type": "object",
+        "minProperties": 1,
+        "additionalProperties": true,
+        "description": "Protocol evidence record. Normative field validation remains schema/evidence.schema.json and the runtime protocol validator.",
+        "x-protocol-schema": "schema/evidence.schema.json"
+      },
+      "VerificationEventIngestionRecord": {
+        "type": "object",
+        "minProperties": 1,
+        "additionalProperties": true,
+        "description": "Protocol verification event. Normative field validation remains schema/verification-event.schema.json and the runtime protocol validator.",
+        "x-protocol-schema": "schema/verification-event.schema.json"
+      },
+      "IngestionRecordResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "written"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "written": {
+            "type": "boolean"
+          }
+        }
+      },
+      "IngestionWriteData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ingestion_id",
+          "accepted",
+          "identities",
+          "evidence",
+          "verification_events"
+        ],
+        "properties": {
+          "ingestion_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "accepted": {
+            "type": "boolean",
+            "const": true
+          },
+          "identities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IngestionRecordResult"
+            }
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IngestionRecordResult"
+            }
+          },
+          "verification_events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IngestionRecordResult"
+            }
+          }
+        }
+      },
+      "IngestionResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/IngestionWriteData"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ApiMeta"
+          }
+        }
+      },
+      "BillingInvoiceCreateRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "plan_code",
+          "price_id"
+        ],
+        "properties": {
+          "plan_code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "price_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expires_in_seconds": {
+            "type": "integer",
+            "minimum": 60,
+            "maximum": 86400,
+            "default": 900
+          }
+        }
+      },
+      "BillingEntitlementView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "entitlement_id",
+          "invoice_id",
+          "plan_code",
+          "duration_seconds",
+          "status",
+          "starts_at",
+          "expires_at",
+          "activated_at"
+        ],
+        "properties": {
+          "entitlement_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "invoice_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "plan_code": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "active",
+              "expired",
+              "revoked"
+            ]
+          },
+          "starts_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "activated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "BillingInvoiceView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "invoice_id",
+          "plan_code",
+          "duration_seconds",
+          "asset_code",
+          "network",
+          "asset_kind",
+          "asset_contract",
+          "amount_atomic",
+          "asset_decimals",
+          "destination",
+          "routing_mode",
+          "routing_reference",
+          "status",
+          "expires_at",
+          "paid_at",
+          "received_atomic",
+          "shortfall_atomic",
+          "excess_atomic",
+          "entitlement",
+          "amount"
+        ],
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "plan_code": {
+            "type": "string"
+          },
+          "duration_seconds": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "asset_code": {
+            "type": "string"
+          },
+          "network": {
+            "type": "string"
+          },
+          "asset_kind": {
+            "type": "string",
+            "enum": [
+              "native",
+              "erc20",
+              "xrp",
+              "btc_utxo"
+            ]
+          },
+          "asset_contract": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "amount_atomic": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "amount": {
+            "type": "string",
+            "description": "Exact decimal amount rendered from amount_atomic and asset_decimals."
+          },
+          "asset_decimals": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 36
+          },
+          "destination": {
+            "type": "string"
+          },
+          "routing_mode": {
+            "type": "string",
+            "enum": [
+              "unique_destination",
+              "xrp_destination_tag",
+              "manual_shared"
+            ]
+          },
+          "routing_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "confirming",
+              "underpaid",
+              "paid",
+              "overpaid",
+              "expired",
+              "canceled",
+              "review_required"
+            ]
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "paid_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "received_atomic": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "shortfall_atomic": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "excess_atomic": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "entitlement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BillingEntitlementView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "BillingInvoiceResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BillingInvoiceView"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ApiMeta"
+          }
+        }
+      },
+      "EntitlementListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "entitlements"
+            ],
+            "properties": {
+              "entitlements": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/BillingEntitlementView"
+                }
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ApiMeta"
+          }
+        }
+      },
+      "BillingPriceView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "price_id",
+          "plan_code",
+          "duration_seconds",
+          "asset_code",
+          "network",
+          "asset_kind",
+          "asset_contract",
+          "amount_atomic",
+          "amount",
+          "asset_decimals",
+          "routing_mode"
+        ],
+        "properties": {
+          "price_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "plan_code": {
+            "type": "string"
+          },
+          "duration_seconds": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "asset_code": {
+            "type": "string"
+          },
+          "network": {
+            "type": "string"
+          },
+          "asset_kind": {
+            "type": "string",
+            "enum": [
+              "native",
+              "erc20",
+              "xrp",
+              "btc_utxo"
+            ]
+          },
+          "asset_contract": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "amount_atomic": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "asset_decimals": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 36
+          },
+          "routing_mode": {
+            "type": "string",
+            "enum": [
+              "unique_destination",
+              "xrp_destination_tag",
+              "manual_shared"
+            ]
+          }
+        }
+      },
+      "BillingPriceListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "prices"
+            ],
+            "properties": {
+              "prices": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/BillingPriceView"
+                }
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ApiMeta"
+          }
+        }
+      },
+      "VerificationEventHistoryView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "nothing_id",
+          "events"
+        ],
+        "properties": {
+          "nothing_id": {
+            "type": "string",
+            "pattern": "^NTH-[0-9]{6}$"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VerificationEventView"
+            }
+          }
+        }
+      },
+      "VerificationEventHistoryResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/VerificationEventHistoryView"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ApiMeta"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Production path: signed OAuth 2.0 access token validated against a fixed HTTPS JWKS endpoint, with issuer, audience, expiry, token type and explicit signing-algorithm validation. The reference static-bearer mode remains for local development only."
       }
     }
   }

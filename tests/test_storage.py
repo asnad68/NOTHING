@@ -143,5 +143,92 @@ class SQLiteNothingStoreTests(unittest.TestCase):
         self.assertTrue(bundle.last_modified.endswith("Z"))
 
 
+
+    def test_authenticated_ingestion_is_idempotent_and_persistent(self):
+        store = self.make_store()
+        procedure = self.load_fixture_bundle()["procedure"]
+        store.put_procedure(procedure, actor="store-test")
+        bundle = {
+            "identities": [{
+                "nothing_id": "NTH-222222",
+                "version": "0.1",
+                "subject": {
+                    "name": "Atomic Store Test",
+                    "type": "business",
+                },
+                "claims": [{
+                    "claim_id": "CLM-222222",
+                    "statement": "A source-backed test claim",
+                    "status": "SOURCE-VERIFIED",
+                    "source": {
+                        "type": "official_website",
+                        "reference": "https://store-test.example",
+                        "checked_at": "2026-09-25T02:00:00Z",
+                    },
+                }],
+                "revocation": {"status": "NOT_REVOKED"},
+            }],
+            "evidence": [{
+                "evidence_id": "EVD-222222",
+                "version": "0.1",
+                "type": "web_page",
+                "source": {
+                    "reference": "https://store-test.example",
+                    "accessed_at": "2026-09-25T02:00:00Z",
+                },
+                "collected_at": "2026-09-25T02:00:00Z",
+                "integrity": {"method": "none"},
+            }],
+            "verification_events": [{
+                "event_id": "VER-222222",
+                "version": "0.1",
+                "occurred_at": "2026-09-25T02:00:00Z",
+                "subject": "NTH-222222",
+                "claim_id": "CLM-222222",
+                "procedure": {
+                    "id": "NOTHING-BASIC-SOURCE-CHECK",
+                    "version": "0.1",
+                },
+                "verifier": {
+                    "type": "hybrid",
+                    "identifier": "store-test",
+                },
+                "evidence": ["EVD-222222"],
+                "result": {
+                    "status": "SOURCE-VERIFIED",
+                    "scope": "Store ingestion test scope",
+                },
+            }],
+        }
+
+        result = store.ingest_bundle(
+            bundle,
+            actor="store-test",
+            idempotency_key="store-key",
+            request_sha256="1" * 64,
+            ingestion_id="ing-222222",
+            recorded_at="2026-09-25T02:00:00Z",
+        )
+        self.assertFalse(result.replayed)
+        self.assertEqual(result.data["ingestion_id"], "ing-222222")
+
+        replay = store.ingest_bundle(
+            bundle,
+            actor="store-test",
+            idempotency_key="store-key",
+            request_sha256="1" * 64,
+            ingestion_id="ing-should-not-win",
+            recorded_at="2026-09-25T02:01:00Z",
+        )
+        self.assertTrue(replay.replayed)
+        self.assertEqual(replay.data["ingestion_id"], "ing-222222")
+        self.assertEqual(store.get_identity("NTH-222222").revision, 1)
+
+        with sqlite3.connect(store.db_path) as connection:
+            version = connection.execute(
+                "SELECT MAX(version) FROM schema_migrations"
+            ).fetchone()[0]
+        self.assertEqual(version, 2)
+
 if __name__ == "__main__":
     unittest.main()

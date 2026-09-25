@@ -3,7 +3,7 @@
 ## Purpose
 
 The reference server is the first executable implementation of the API contract in `api/openapi.json`.
-It uses only the Python standard library, delegates cross-record verification semantics to `src/nothing_protocol.py`, and can consume either the demo filesystem backend or the durable SQLite reference backend.
+It uses only the Python standard library, delegates cross-record verification semantics to `src/nothing_protocol.py`, and can consume either the demo filesystem backend or the durable SQLite reference backend. Public resource routes are read-only; one separate authenticated ingestion route provides controlled mutations.
 
 ## Start locally
 
@@ -26,8 +26,7 @@ python -m src.nothing_api --storage-backend sqlite --db-path data/nothing.db
 ```
 ```
 
-Environment variables supported by the reference implementation:
-`NOTHING_API_HOST`, `NOTHING_API_PORT`, `NOTHING_DATA_ROOT`, `NOTHING_RATE_WINDOW_SECONDS`, `NOTHING_RATE_LIMIT_MAX_REQUESTS`.
+Environment variables supported by the reference implementation include `NOTHING_API_HOST`, `NOTHING_API_PORT`, `NOTHING_DATA_ROOT`, `NOTHING_RATE_WINDOW_SECONDS`, `NOTHING_RATE_LIMIT_MAX_REQUESTS`, `NOTHING_AUTH_MODE`, `NOTHING_TRUST_PROXY_HEADERS` and the production JWT settings documented in `docs/PRODUCTION-AUTHORIZATION.md`.
 
 ## Endpoints
 
@@ -36,6 +35,7 @@ GET /v1/identity/{nothing_id}
 GET /v1/evidence/{evidence_id}
 GET /v1/verification-events/{event_id}
 GET /v1/procedures/{procedure_id}/{version}
+POST /v1/ingestion/bundles
 GET /healthz
 GET /readyz
 ```
@@ -49,13 +49,13 @@ The identity endpoint resolves Identity → Claim → Evidence → Verification 
 ## HTTP behavior
 
 Successful responses use `application/json`; errors use `application/problem+json`.
-The reference server implements ETag, If-None-Match, 304 Not Modified, Last-Modified, cache headers, Retry-After rate limiting, CORS for GET/OPTIONS, and explicit rejection of write methods.
+The reference server implements ETag, If-None-Match, 304 Not Modified, Last-Modified, cache headers and Retry-After rate limiting for reads, while write ingestion has a separate rate limit and does not enable wildcard CORS.
 
 ## Boundary
 
 The example dataset is synthetic. The reference server is not a production internet-facing service. The SQLite backend provides durable local/staging persistence, but it is not the intended multi-instance production database.
 
-Production deployment must preserve the same dependency direction: HTTP transport → resource representation → storage port → protocol resolver → data records. Production still requires TLS/gateway controls, authenticated ingestion for future writes, distributed rate limiting, observability, governed PostgreSQL-compatible persistence and security/privacy/legal review.
+Production deployment must preserve the same dependency direction: HTTP transport → resource representation → storage port → protocol resolver → data records. Production still requires TLS/gateway controls, distributed rate limiting, observability, governed PostgreSQL-compatible persistence and security/privacy/legal review.
 
 ## Tests
 
@@ -64,4 +64,23 @@ Production deployment must preserve the same dependency direction: HTTP transpor
 
 ## Production work still required
 
-The repository now defines the production persistence/deployment boundary and provides a durable SQLite reference implementation. Actual production use still requires PostgreSQL implementation, managed credentials, TLS/gateway controls, distributed abuse controls, structured observability, restore-tested backups, origin-specific CORS, authenticated write ingestion and a security/privacy/legal review.
+The repository now defines and implements the production persistence/authentication boundary, including a PostgreSQL adapter and JWT access-token validation. Actual internet-facing production use still requires managed credentials, TLS/gateway controls, distributed abuse controls, structured observability, restore-tested backups, origin-specific CORS and a security/privacy/legal review.
+
+## Authenticated ingestion
+
+\`POST /v1/ingestion/bundles\` is the only mutation route in the reference server.
+
+It requires:
+
+- Bearer authentication
+- \`Content-Type: application/json\`
+- \`Idempotency-Key\`
+
+It accepts Identity, Evidence and Verification Event records. The server resolves the affected graph before committing the write set.
+
+The filesystem backend returns \`503 WRITE_INGESTION_UNAVAILABLE\`. The durable SQLite backend provides the transactional implementation and persistent idempotency records.
+
+Procedure versions are not writable through the endpoint.
+
+The public GET API and Verify Web remain read-only.
+

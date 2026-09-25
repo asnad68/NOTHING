@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nothing-xrpl-worker
+  namespace: nothing
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: nothing-xrpl-worker
+  template:
+    metadata:
+      labels:
+        app: nothing-xrpl-worker
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: worker
+          image: ghcr.io/asnad68/nothing:CHANGE_ME
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "src.nothing_xrpl_worker"]
+          envFrom:
+            - configMapRef:
+                name: nothing-api-config
+            - secretRef:
+                name: nothing-payment-worker-secrets
+          env:
+            - name: NOTHING_POSTGRES_APPLICATION_NAME
+              value: nothing-payment-worker
+            - name: NOTHING_WORKER_HEARTBEAT_FILE
+              value: /tmp/nothing-xrpl-worker.heartbeat
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - >-
+                  import os,time,sys; p="/tmp/nothing-xrpl-worker.heartbeat";
+                  sys.exit(0 if os.path.exists(p) and time.time()-os.path.getmtime(p) < 30 else 1)
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 16Mi

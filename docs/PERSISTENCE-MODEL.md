@@ -87,6 +87,18 @@ One immutable row per procedure_id + version.
 
 This is important because old verification events must continue to reference the exact semantics that existed when they were evaluated.
 
+### ingestion_idempotency
+
+One immutable row per authenticated actor + Idempotency-Key.
+
+The row binds a client retry key to:
+
+- request SHA-256 fingerprint
+- assigned ingestion ID
+- accepted status code
+- canonical result
+- original recorded timestamp
+
 ### audit_log
 
 Append-only operator/application audit trail.
@@ -214,3 +226,51 @@ This persistence layer does not provide:
 - anonymous write access
 - payment processing
 - identity-document storage
+
+
+## Authenticated ingestion idempotency
+
+Authenticated writes use a dedicated append-only table:
+
+\`ingestion_idempotency\`
+
+Key:
+
+\`(actor, idempotency_key)\`
+
+Stored values include:
+
+- request SHA-256 fingerprint
+- ingestion ID
+- HTTP status
+- canonical result JSON
+- recorded timestamp
+
+The same actor and key can replay only the same request fingerprint. A different fingerprint is a conflict.
+
+The idempotency record is committed in the same database transaction as the records it represents. Therefore a successful response cannot exist without the corresponding write set having committed.
+
+The reference implementation does not automatically delete idempotency records. Production retention and namespace-reuse rules must be defined before pruning.
+
+## Atomic ingestion transaction
+
+The intended transaction sequence is:
+
+1. Authenticate the request before persistence.
+2. Parse and bound the request.
+3. Check idempotency.
+4. Validate all supplied protocol records.
+5. Load the affected existing graph.
+6. Resolve the combined graph using the existing protocol resolver.
+7. Append all accepted records and audit entries.
+8. Persist the idempotency result.
+9. Commit once.
+
+No individual HTTP call can create a half-written Identity + Evidence + Verification Event bundle.
+
+## Write boundary
+
+The persistence port exposes authenticated ingestion as one logical operation. Public GET resources do not call mutation methods.
+
+The filesystem demonstration backend intentionally rejects ingestion writes because it has no durable transactional write surface.
+

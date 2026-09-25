@@ -108,5 +108,103 @@ class OpenApiContractTests(unittest.TestCase):
         )
 
 
+
+
+    def test_identity_verification_history_contract(self) -> None:
+        path = self.spec["paths"]["/v1/identity/{nothing_id}/verification-events"]["get"]
+        self.assertEqual(path["security"], [])
+        self.assertEqual(
+            self.resolve_ref(path["parameters"][0])["name"],
+            "nothing_id",
+        )
+        self.assertEqual(
+            self.resolve_ref(path["parameters"][1])["name"],
+            "If-None-Match",
+        )
+        self.assertEqual(
+            path["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/VerificationEventHistoryResponse",
+        )
+
+    def test_billing_invoice_schema_hides_internal_customer_reference(self) -> None:
+        schema = self.spec["components"]["schemas"]["BillingInvoiceView"]
+        self.assertNotIn("customer_ref", schema["required"])
+        self.assertNotIn("customer_ref", schema["properties"])
+        self.assertIn("duration_seconds", schema["required"])
+        self.assertEqual(
+            schema["properties"]["duration_seconds"]["type"],
+            "integer",
+        )
+
+    def test_billing_contract_is_customer_scoped_and_authenticated(self) -> None:
+        paths = self.spec["paths"]
+
+        create = paths["/v1/billing/invoices"]["post"]
+        self.assertEqual(create["security"], [{"BearerAuth": []}])
+        self.assertIn(
+            "Idempotency-Key",
+            {
+                self.resolve_ref(parameter)["name"]
+                for parameter in create["parameters"]
+            },
+        )
+        self.assertEqual(
+            create["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/BillingInvoiceCreateRequest",
+        )
+        for status in ("200", "400", "401", "403", "404", "409", "413", "415", "503"):
+            self.assertIn(status, create["responses"])
+
+        get_invoice = paths["/v1/billing/invoices/{invoice_id}"]["get"]
+        self.assertEqual(get_invoice["security"], [{"BearerAuth": []}])
+        self.assertEqual(
+            self.resolve_ref(get_invoice["parameters"][0])["name"],
+            "invoice_id",
+        )
+        self.assertEqual(
+            get_invoice["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/BillingInvoiceResponse",
+        )
+
+        prices = paths["/v1/billing/prices"]["get"]
+        self.assertEqual(prices["security"], [{"BearerAuth": []}])
+        self.assertEqual(
+            prices["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/BillingPriceListResponse",
+        )
+
+        entitlements = paths["/v1/billing/entitlements"]["get"]
+        self.assertEqual(entitlements["security"], [{"BearerAuth": []}])
+        self.assertEqual(
+            entitlements["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/EntitlementListResponse",
+        )
+
+        request_schema = self.spec["components"]["schemas"]["BillingInvoiceCreateRequest"]
+        self.assertFalse(request_schema["additionalProperties"])
+        self.assertEqual(
+            set(request_schema["properties"]),
+            {"plan_code", "price_id", "expires_in_seconds"},
+        )
+
+    def test_authenticated_ingestion_contract(self) -> None:
+        operation = self.spec["paths"]["/v1/ingestion/bundles"]["post"]
+        self.assertEqual(operation["security"], [{"BearerAuth": []}])
+        parameter_names = {
+            self.resolve_ref(parameter)["name"]
+            for parameter in operation["parameters"]
+        }
+        self.assertIn("Idempotency-Key", parameter_names)
+        for status in ("200", "400", "401", "403", "409", "413", "415", "422", "429", "503"):
+            self.assertIn(status, operation["responses"])
+        self.assertIn(
+            "application/problem+json",
+            operation["responses"]["401"]["content"],
+        )
+        self.assertIn(
+            "BearerAuth",
+            self.spec["components"]["securitySchemes"],
+        )
+
 if __name__ == "__main__":
     unittest.main()

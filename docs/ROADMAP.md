@@ -29,12 +29,13 @@
 - [x] Enforce linear, acyclic supersession in v0.1
 
 ## Phase 3 — Verify Web
-- [ ] Build public identity lookup page
-- [ ] Build claim/evidence display
-- [ ] Build verification-event timeline
-- [ ] Build procedure reference display
-- [ ] Build revocation display
-- [ ] Add human-readable Nothing Mark
+- [x] Build public identity lookup page
+- [x] Build claim/evidence display
+- [x] Build verification-event timeline
+- [x] Build procedure reference display
+- [x] Build revocation display
+- [x] Add human-readable Nothing Mark
+- [ ] Deploy static verifier with production TLS/CDN/CSP
 
 ## Phase 4 — API
 - [x] Define resource model from resolved protocol graph
@@ -50,9 +51,17 @@
 - [x] Define production deployment architecture
 - [x] Define production persistence and governance boundary
 - [x] Implement storage port and durable SQLite reference backend
-- [ ] Production PostgreSQL adapter and managed deployment
-- [ ] Authentication for future write operations
-- [ ] Authentication for future write operations
+- [x] Production PostgreSQL adapter and migration system
+- [x] Production JWT authentication and scope authorization
+- [x] Serializable transaction/retry and concurrency hardening
+- [x] Production deployment boundary: OCI image, hardened Kubernetes baseline, secret contract, migration/runtime role separation, health/readiness, backup/restore runbook, observability requirements, and fail-closed single-tenant boundary
+
+- [x] Define separate authenticated write-ingestion boundary
+- [x] Require bearer authentication and idempotency for writes
+- [x] Implement atomic Identity + Evidence + Verification Event ingestion
+- [x] Persist idempotency records with immutable audit linkage
+- [ ] Production managed authentication / authorization boundary
+
 
 ## Phase 5 — Pilot
 - [ ] Create a controlled pilot dataset
@@ -71,9 +80,25 @@
 - [ ] Research BIMI and domain signals
 
 ## Phase 7 — Commercial Infrastructure
-- [ ] Define service tiers
+- [x] Define service tiers
+- [x] Define initial cryptocurrency billing/entitlement data model
+- [x] Define payment routing and duplicate-payment invariants
+- [x] Implement receive-only chain observation adapters
+- [x] Implement PostgreSQL payment allocation and entitlement activation boundary
+- [x] Implement entitlement access enforcement boundary
+- [x] Harden PostgreSQL runtime update privileges and checkpoint invariants
+- [x] Bind billing idempotency to the complete authenticated request
+- [x] Implement authenticated customer billing API boundary
+- [x] Implement XRPL checkpointed payment worker
+- [x] Implement authenticated billing price catalog/invoice/entitlement reads
+- [x] Implement audited manual payment reconciliation path
+- [x] Implement scheduled invoice-expiration maintenance
+- [x] Define payment reconciliation/audit requirements
 - [ ] Define governance
 - [ ] Define operational security requirements
+- [ ] Managed authentication/identity-provider production registration
+- [ ] Production infrastructure deployment and secret injection
+- [ ] Production backup/restore drill
 - [ ] Conduct legal/compliance review before launch
 
 Roadmap status: experimental and subject to change.

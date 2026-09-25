@@ -169,3 +169,45 @@ Read replicas + encrypted backups
 Evidence snapshots, when they become necessary, should be kept in encrypted object storage and referenced by Evidence metadata plus an integrity digest rather than embedded as sensitive database payloads.
 
 Production governance must separately define onboarding authority, authorization, revocation, disputes, retention, privacy deletion/redaction, procedure approval and operator audit.
+
+
+## 16. Authenticated write boundary
+
+The mutation path is deliberately separate from the read path:
+
+\`\`\`text
+Public clients / Verify Web
+          |
+          v
+      GET /v1/*
+          |
+          v
+      Storage Port
+          |
+          v
+    Protocol Resolver
+
+Authenticated writer
+          |
+          v
+POST /v1/ingestion/bundles
+          |
+          +--> Bearer authentication
+          +--> Idempotency-Key
+          +--> bounded JSON
+          +--> protocol validation
+          +--> resolver
+          |
+          v
+      Storage Port
+          |
+          v
+     Atomic commit
+\`\`\`
+
+Only the ingestion route may mutate persistent protocol data in the reference API.
+
+Identity, Evidence and Verification Event writes are committed atomically. Procedure versions remain immutable and are not accepted in the ingestion body.
+
+Verify Web remains a read client and never becomes a second write or verification engine.
+
