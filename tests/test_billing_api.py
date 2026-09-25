@@ -63,6 +63,21 @@ class FakeBillingService:
             "entitlement": None,
         }
 
+    def list_prices(self):
+        return [{
+            "price_id": "33333333-3333-4333-8333-333333333333",
+            "plan_code": "xrp-monthly",
+            "duration_seconds": 2592000,
+            "asset_code": "XRP",
+            "network": "xrpl",
+            "asset_kind": "xrp",
+            "asset_contract": None,
+            "amount_atomic": "2500000",
+            "amount": "2.5",
+            "asset_decimals": 6,
+            "routing_mode": "xrp_destination_tag",
+        }]
+
     def list_entitlements(self, *, customer_ref, active_only):
         if self.invoice is None or customer_ref != self.invoice.customer_ref:
             return []
@@ -140,6 +155,18 @@ class BillingApiTests(unittest.TestCase):
             body=body,
             headers={"Idempotency-Key": key},
         )
+
+    def test_price_catalog_is_authenticated_and_hides_treasury_route(self):
+        response, body = self.request(
+            "GET",
+            "/v1/billing/prices",
+        )
+        self.assertEqual(response.status, 200)
+        data = json.loads(body)["data"]["prices"]
+        self.assertEqual(data[0]["price_id"], "33333333-3333-4333-8333-333333333333")
+        self.assertEqual(data[0]["amount"], "2.5")
+        self.assertNotIn("destination", data[0])
+        self.assertNotIn("routing_reference", data[0])
 
     def test_create_invoice_does_not_accept_client_customer_or_destination(self):
         response, body = self.post_invoice(
