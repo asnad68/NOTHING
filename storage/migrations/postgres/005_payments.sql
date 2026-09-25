@@ -154,6 +154,84 @@ CREATE TRIGGER billing_audit_log_no_delete
 BEFORE DELETE ON billing_audit_log
 FOR EACH ROW EXECUTE FUNCTION nothing_billing_immutable_guard();
 
+
+CREATE OR REPLACE FUNCTION nothing_billing_invoice_guard()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $
+BEGIN
+    IF NEW.customer_ref <> OLD.customer_ref
+       OR NEW.plan_code <> OLD.plan_code
+       OR NEW.asset_code <> OLD.asset_code
+       OR NEW.network <> OLD.network
+       OR NEW.asset_kind <> OLD.asset_kind
+       OR NEW.asset_contract IS DISTINCT FROM OLD.asset_contract
+       OR NEW.amount_atomic <> OLD.amount_atomic
+       OR NEW.asset_decimals <> OLD.asset_decimals
+       OR NEW.destination <> OLD.destination
+       OR NEW.client_idempotency_key <> OLD.client_idempotency_key
+       OR NEW.expires_at <> OLD.expires_at
+       OR NEW.quote_json <> OLD.quote_json THEN
+        RAISE EXCEPTION 'billing invoice quote fields are immutable'
+            USING ERRCODE = '55000';
+    END IF;
+    RETURN NEW;
+END;
+$;
+
+DROP TRIGGER IF EXISTS billing_invoices_quote_guard ON billing_invoices;
+CREATE TRIGGER billing_invoices_quote_guard
+BEFORE UPDATE ON billing_invoices
+FOR EACH ROW EXECUTE FUNCTION nothing_billing_invoice_guard();
+
+CREATE OR REPLACE FUNCTION nothing_billing_payment_guard()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $
+BEGIN
+    IF NEW.network <> OLD.network
+       OR NEW.chain_event_key <> OLD.chain_event_key
+       OR NEW.asset_code <> OLD.asset_code
+       OR NEW.asset_kind <> OLD.asset_kind
+       OR NEW.asset_contract IS DISTINCT FROM OLD.asset_contract
+       OR NEW.destination <> OLD.destination
+       OR NEW.amount_atomic <> OLD.amount_atomic
+       OR NEW.tx_hash <> OLD.tx_hash
+       OR NEW.first_observed_at <> OLD.first_observed_at THEN
+        RAISE EXCEPTION 'payment event identity fields are immutable'
+            USING ERRCODE = '55000';
+    END IF;
+    RETURN NEW;
+END;
+$;
+
+DROP TRIGGER IF EXISTS payment_events_identity_guard ON payment_events;
+CREATE TRIGGER payment_events_identity_guard
+BEFORE UPDATE ON payment_events
+FOR EACH ROW EXECUTE FUNCTION nothing_billing_payment_guard();
+
+CREATE OR REPLACE FUNCTION nothing_billing_entitlement_guard()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $
+BEGIN
+    IF NEW.invoice_id <> OLD.invoice_id
+       OR NEW.customer_ref <> OLD.customer_ref
+       OR NEW.plan_code <> OLD.plan_code
+       OR NEW.starts_at <> OLD.starts_at
+       OR NEW.expires_at <> OLD.expires_at THEN
+        RAISE EXCEPTION 'subscription entitlement identity fields are immutable'
+            USING ERRCODE = '55000';
+    END IF;
+    RETURN NEW;
+END;
+$;
+
+DROP TRIGGER IF EXISTS subscription_entitlements_identity_guard ON subscription_entitlements;
+CREATE TRIGGER subscription_entitlements_identity_guard
+BEFORE UPDATE ON subscription_entitlements
+FOR EACH ROW EXECUTE FUNCTION nothing_billing_entitlement_guard();
+
 -- The runtime role may operate billing state, but never alter plan structure.
 GRANT SELECT ON subscription_plans, billing_prices TO nothing_app;
 GRANT SELECT, INSERT, UPDATE ON billing_invoices TO nothing_app;
