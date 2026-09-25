@@ -2,7 +2,8 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \\
+    NOTHING_WORKER_HEARTBEAT_MAX_AGE_SECONDS=120
 
 RUN addgroup --system --gid 10001 nothing \
     && adduser --system --uid 10001 --gid 10001 --no-create-home nothing
@@ -24,5 +25,8 @@ RUN chown -R nothing:nothing /app
 USER nothing
 
 STOPSIGNAL SIGTERM
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \\
+    CMD python -c "import os,sys,time; p=os.getenv(\"NOTHING_WORKER_HEARTBEAT_FILE\",\"/tmp/nothing-xrpl-worker.heartbeat\"); age=time.time()-os.path.getmtime(p); sys.exit(0 if age <= float(os.getenv(\"NOTHING_WORKER_HEARTBEAT_MAX_AGE_SECONDS\",\"120\")) else 1)"
 
 CMD ["python", "-m", "src.nothing_xrpl_worker"]
