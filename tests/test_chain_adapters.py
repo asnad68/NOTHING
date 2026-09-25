@@ -141,6 +141,68 @@ class ChainAdapterTests(unittest.TestCase):
         self.assertEqual(obs.finality_status, "confirmed")
         self.assertEqual(obs.routing_mode, "unique_destination")
 
+
+    def test_xrpl_discovery_paginates_until_checkpoint(self):
+        adapter = XrplJsonRpcAdapter("https://example.invalid/")
+        calls = []
+
+        def account_tx():
+            calls.append(True)
+            if len(calls) == 1:
+                return {
+                    "validated": True,
+                    "transactions": [
+                        {
+                            "validated": True,
+                            "ledger_index": 200,
+                            "tx_json": {
+                                "hash": "NEW-1",
+                                "TransactionType": "Payment",
+                                "Destination": "r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2",
+                                "DestinationTag": 99,
+                            },
+                            "meta": {
+                                "TransactionResult": "tesSUCCESS",
+                                "delivered_amount": "1000000",
+                            },
+                        }
+                    ],
+                    "marker": {"page": 2},
+                }
+            return {
+                "validated": True,
+                "transactions": [
+                    {
+                        "validated": True,
+                        "ledger_index": 199,
+                        "tx_json": {
+                            "hash": "CHECKPOINT",
+                            "TransactionType": "AccountSet",
+                        },
+                        "meta": {"TransactionResult": "tesSUCCESS"},
+                    }
+                ]
+            }
+
+        object.__setattr__(
+            adapter,
+            "_rpc",
+            FakeRpc({"account_tx": account_tx}),
+        )
+
+        result = adapter.discover_recent_payments_with_checkpoint(
+            account="r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2",
+            stop_after_tx_hash="CHECKPOINT",
+            max_pages=3,
+        )
+
+        self.assertEqual(len(result.observations), 1)
+        self.assertEqual(result.observations[0].tx_hash, "NEW-1")
+        self.assertEqual(result.checkpoint_tx_hash, "CHECKPOINT")
+        self.assertEqual(result.checkpoint_ledger_index, 199)
+        self.assertTrue(result.reached_checkpoint)
+        self.assertEqual(len(calls), 2)
+
     def test_evm_chain_id_is_required_and_matches(self):
         adapter = EvmJsonRpcAdapter(
             "https://example.invalid/",
