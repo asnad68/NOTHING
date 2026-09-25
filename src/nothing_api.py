@@ -64,8 +64,7 @@ def _json_bytes(payload: dict[str, Any]) -> bytes:
             sort_keys=True,
             separators=(",", ":"),
         )
-        + "
-"
+        + "\n"
     ).encode("utf-8")
 
 
