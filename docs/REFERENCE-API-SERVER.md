@@ -26,8 +26,7 @@ python -m src.nothing_api --storage-backend sqlite --db-path data/nothing.db
 ```
 ```
 
-Environment variables supported by the reference implementation:
-`NOTHING_API_HOST`, `NOTHING_API_PORT`, `NOTHING_DATA_ROOT`, `NOTHING_RATE_WINDOW_SECONDS`, `NOTHING_RATE_LIMIT_MAX_REQUESTS`.
+Environment variables supported by the reference implementation include `NOTHING_API_HOST`, `NOTHING_API_PORT`, `NOTHING_DATA_ROOT`, `NOTHING_RATE_WINDOW_SECONDS`, `NOTHING_RATE_LIMIT_MAX_REQUESTS`, `NOTHING_AUTH_MODE` and the production JWT settings documented in `docs/PRODUCTION-AUTHORIZATION.md`.
 
 ## Endpoints
 
@@ -65,7 +64,7 @@ Production deployment must preserve the same dependency direction: HTTP transpor
 
 ## Production work still required
 
-The repository now defines the production persistence/deployment boundary and provides a durable SQLite reference implementation. Actual production use still requires PostgreSQL implementation, managed credentials, TLS/gateway controls, distributed abuse controls, structured observability, restore-tested backups, origin-specific CORS and a security/privacy/legal review.
+The repository now defines and implements the production persistence/authentication boundary, including a PostgreSQL adapter and JWT access-token validation. Actual internet-facing production use still requires managed credentials, TLS/gateway controls, distributed abuse controls, structured observability, restore-tested backups, origin-specific CORS and a security/privacy/legal review.
 
 ## Authenticated ingestion
 
