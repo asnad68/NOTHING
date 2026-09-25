@@ -5,7 +5,7 @@
   "assets": {
     "XRP": {
       "network": "XRPL",
-      "routing_mode": "manual_shared",
+      "routing_mode": "xrp_destination_tag",
       "address": "r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2"
     },
     "USDT": {
