@@ -7,6 +7,7 @@ and atomically allocates the payment and activates an entitlement.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import secrets
 import uuid
@@ -716,12 +717,92 @@ class SubscriptionBillingService:
 
             return self._settlement_snapshot(connection, invoice_id)
 
+    @staticmethod
+    def customer_ref_for_actor(actor: str) -> str:
+        if not actor.strip():
+            raise PaymentValidationError("actor is required")
+        digest = hashlib.sha256(actor.encode("utf-8")).hexdigest()
+        return "cust-" + digest
+
+    def get_invoice(
+        self,
+        *,
+        invoice_id: str,
+        customer_ref: str,
+    ) -> dict[str, Any]:
+        try:
+            parsed_invoice_id = uuid.UUID(invoice_id)
+        except (TypeError, ValueError) as exc:
+            raise PaymentValidationError("invoice_id must be a UUID") from exc
+        if not customer_ref.strip():
+            raise PaymentValidationError("customer_ref is required")
+        with self.store._pool.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT invoice_id
+                FROM billing_invoices
+                WHERE invoice_id = %s
+                  AND customer_ref = %s
+                """,
+                (parsed_invoice_id, customer_ref),
+            ).fetchone()
+            if row is None:
+                raise NotFoundError(f"invoice {invoice_id} does not exist")
+            return self._settlement_snapshot(connection, invoice_id)
+
+    def list_entitlements(
+        self,
+        *,
+        customer_ref: str,
+        active_only: bool = True,
+    ) -> list[dict[str, Any]]:
+        if not customer_ref.strip():
+            raise PaymentValidationError("customer_ref is required")
+        with self.store._pool.connection() as connection:
+            if active_only:
+                rows = connection.execute(
+                    """
+                    SELECT entitlement_id, invoice_id, plan_code,
+                           status, starts_at, expires_at, activated_at
+                    FROM subscription_entitlements
+                    WHERE customer_ref = %s
+                      AND status = 'active'
+                      AND expires_at > NOW()
+                    ORDER BY expires_at DESC
+                    """,
+                    (customer_ref,),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT entitlement_id, invoice_id, plan_code,
+                           status, starts_at, expires_at, activated_at
+                    FROM subscription_entitlements
+                    WHERE customer_ref = %s
+                    ORDER BY created_at DESC
+                    """,
+                    (customer_ref,),
+                ).fetchall()
+        return [
+            {
+                "entitlement_id": str(row["entitlement_id"]),
+                "invoice_id": str(row["invoice_id"]),
+                "plan_code": row["plan_code"],
+                "status": row["status"],
+                "starts_at": row["starts_at"],
+                "expires_at": row["expires_at"],
+                "activated_at": row["activated_at"],
+            }
+            for row in rows
+        ]
+
     def _settlement_snapshot(self, connection: Any, invoice_id: str) -> dict[str, Any]:
         invoice = connection.execute(
             """
             SELECT invoice_id, customer_ref, plan_code, asset_code, network,
                    asset_kind, asset_contract, amount_atomic,
-                   asset_decimals, destination, status, expires_at, paid_at
+                   asset_decimals, destination, routing_mode,
+                   routing_reference, status, expires_at, paid_at
             FROM billing_invoices
             WHERE invoice_id = %s
             """,
@@ -761,6 +842,8 @@ class SubscriptionBillingService:
             "amount_atomic": str(invoice["amount_atomic"]),
             "asset_decimals": int(invoice["asset_decimals"]),
             "destination": invoice["destination"],
+            "routing_mode": invoice["routing_mode"],
+            "routing_reference": invoice["routing_reference"],
             "status": invoice["status"],
             "expires_at": invoice["expires_at"],
             "paid_at": invoice["paid_at"],
