@@ -103,6 +103,94 @@ class ChainAdapterTests(unittest.TestCase):
         self.assertIsNone(obs.routing_reference)
         self.assertTrue(obs.success)
 
+    def test_bitcoin_rejects_wrong_chain_endpoint(self):
+        adapter = BitcoinCoreRpcAdapter(
+            "https://example.invalid/",
+            expected_chain="main",
+        )
+        invoice = PaymentInvoice(
+            invoice_id="inv-btc-chain",
+            customer_ref="cust",
+            plan_code="btc-monthly",
+            asset_code="BTC",
+            network="bitcoin",
+            asset_kind="btc_utxo",
+            amount_atomic=1_000,
+            asset_decimals=8,
+            destination="3ABUrDAmi6w9TRsHuwFgdcDBLvXUzbAfZY",
+            expires_at=datetime.now(timezone.utc),
+            routing_mode="unique_destination",
+        )
+        object.__setattr__(
+            adapter,
+            "_rpc",
+            FakeRpc({
+                "getrawtransaction": {
+                    "blockhash": "block-1",
+                    "confirmations": 6,
+                    "vout": [{
+                        "value": "0.00001000",
+                        "scriptPubKey": {"address": invoice.destination},
+                    }],
+                },
+                "getblockchaininfo": {"chain": "test"},
+            }),
+        )
+        with self.assertRaises(ChainAdapterError):
+            adapter.verify("tx-btc", invoice)
+
+    def test_erc20_multiple_matching_transfers_fail_closed(self):
+        adapter = EvmJsonRpcAdapter(
+            "https://example.invalid/",
+            "ethereum",
+            expected_chain_id=1,
+        )
+        contract = "0x1111111111111111111111111111111111111111"
+        invoice = PaymentInvoice(
+            invoice_id="inv-erc20-ambiguous",
+            customer_ref="cust",
+            plan_code="token-monthly",
+            asset_code="USDT",
+            network="ethereum",
+            asset_kind="erc20",
+            amount_atomic=1_000,
+            asset_decimals=6,
+            destination="0xE1c90171271B5325beE02592ACc50A510448d03E",
+            expires_at=datetime.now(timezone.utc),
+            asset_contract=contract,
+            routing_mode="unique_destination",
+        )
+        encoded_to = "0x" + ("0" * 24) + invoice.destination[2:].lower()
+        transfer_topic = (
+            "0xddf252ad1be2c89b69c2b068fc378daa"
+            "952ba7f163c4a11628f55a7eaa9c3b"
+        )
+        log = {
+            "address": contract,
+            "topics": [transfer_topic, "0x" + "0" * 64, encoded_to],
+            "data": "0x3e8",
+            "logIndex": "0x1",
+        }
+        log2 = dict(log, logIndex="0x2")
+        object.__setattr__(
+            adapter,
+            "_rpc",
+            FakeRpc({
+                "eth_chainId": "0x1",
+                "eth_getTransactionByHash": {"to": invoice.destination, "value": "0x0"},
+                "eth_getTransactionReceipt": {
+                    "status": "0x1",
+                    "blockNumber": "0x64",
+                    "blockHash": "0xblock",
+                    "logs": [log, log2],
+                },
+                "eth_blockNumber": "0x69",
+                "eth_getBlockByNumber": {"number": "0x65"},
+            }),
+        )
+        with self.assertRaises(ChainAdapterError):
+            adapter.verify("0xtx", invoice)
+
     def test_bitcoin_finality_respects_required_confirmations(self):
         adapter = BitcoinCoreRpcAdapter(
             "https://example.invalid/",
