@@ -203,7 +203,7 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
                   has_table_privilege(
                     'nothing_payment',
                     'subscription_entitlements',
-                    'SELECT,INSERT'
+                    'SELECT,INSERT,UPDATE'
                   ) AS entitlements,
                   has_table_privilege(
                     'nothing_payment',
