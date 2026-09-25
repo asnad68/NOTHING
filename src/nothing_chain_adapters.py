@@ -301,10 +301,20 @@ class XrplJsonRpcAdapter:
             raise NotFoundError(f"XRPL transaction {tx_hash} not found")
 
         validated = bool(result.get("validated"))
+        if not validated:
+            raise ChainAdapterError(
+                "XRPL transaction result is not from a validated ledger"
+            )
+        if result.get("TransactionType") != "Payment":
+            raise ChainAdapterError(
+                "XRPL transaction is not a Payment transaction"
+            )
         meta = result.get("meta") or {}
         tx_result = meta.get("TransactionResult")
-        success = validated and tx_result == "tesSUCCESS"
+        success = tx_result == "tesSUCCESS"
         destination = result.get("Destination")
+        if not isinstance(destination, str) or not destination.strip():
+            raise ChainAdapterError("XRPL Payment has no valid Destination")
         tag = result.get("DestinationTag")
         delivered = meta.get("delivered_amount")
         if delivered is None:
@@ -401,6 +411,10 @@ class XrplJsonRpcAdapter:
             result = self._rpc.call("account_tx", [params])
             if not isinstance(result, dict):
                 raise ChainAdapterError("XRPL account_tx response is invalid")
+            if result.get("validated") is False:
+                raise ChainAdapterError(
+                    "XRPL account_tx response is not from a validated ledger"
+                )
 
             transactions = result.get("transactions", [])
             if not isinstance(transactions, list):
