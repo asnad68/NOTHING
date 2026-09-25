@@ -59,6 +59,79 @@ class ChainAdapterTests(unittest.TestCase):
 
 
 
+    def test_xrpl_non_payment_transaction_is_rejected(self):
+        adapter = XrplJsonRpcAdapter("https://example.invalid/")
+        object.__setattr__(
+            adapter,
+            "_rpc",
+            FakeRpc(
+                {
+                    "tx": {
+                        "validated": True,
+                        "TransactionType": "AccountSet",
+                        "Destination": "r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2",
+                        "meta": {
+                            "TransactionResult": "tesSUCCESS",
+                            "delivered_amount": "2500000",
+                        },
+                    }
+                }
+            ),
+        )
+        invoice = PaymentInvoice(
+            invoice_id="inv-non-payment",
+            customer_ref="cust",
+            plan_code="xrp-monthly",
+            asset_code="XRP",
+            network="xrpl",
+            asset_kind="xrp",
+            amount_atomic=2500000,
+            asset_decimals=6,
+            destination="r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2",
+            expires_at=datetime.now(timezone.utc),
+            routing_mode="xrp_destination_tag",
+            routing_reference="123456",
+        )
+        with self.assertRaises(ChainAdapterError):
+            adapter.verify("ABC123", invoice)
+
+    def test_xrpl_tentative_transaction_is_rejected(self):
+        adapter = XrplJsonRpcAdapter("https://example.invalid/")
+        object.__setattr__(
+            adapter,
+            "_rpc",
+            FakeRpc(
+                {
+                    "tx": {
+                        "validated": False,
+                        "TransactionType": "Payment",
+                        "Destination": "r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2",
+                        "meta": {
+                            "TransactionResult": "tesSUCCESS",
+                            "delivered_amount": "2500000",
+                        },
+                    }
+                }
+            ),
+        )
+        invoice = PaymentInvoice(
+            invoice_id="inv-tentative",
+            customer_ref="cust",
+            plan_code="xrp-monthly",
+            asset_code="XRP",
+            network="xrpl",
+            asset_kind="xrp",
+            amount_atomic=2500000,
+            asset_decimals=6,
+            destination="r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2",
+            expires_at=datetime.now(timezone.utc),
+            routing_mode="xrp_destination_tag",
+            routing_reference="123456",
+        )
+        with self.assertRaises(ChainAdapterError):
+            adapter.verify("ABC123", invoice)
+
+
     def test_evm_native_observation_has_unique_destination_routing(self):
         adapter = EvmJsonRpcAdapter(
             "https://example.invalid/",
