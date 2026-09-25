@@ -99,7 +99,7 @@ The server derives the customer reference from the authenticated principal and o
 
 Authentication uses the separate `nothing:billing` permission.
 
-The response exposes the exact atomic amount, rendered decimal amount, network, asset, destination, routing mode/reference, expiry and current payment state.
+The response exposes the exact atomic amount, rendered decimal amount, purchased duration, network, asset, destination, routing mode/reference, expiry and current payment state; internal customer identifiers are not exposed.
 
 `Idempotency-Key` is required. Reusing the same key for the same customer and quote replays the existing invoice; changing the quote under the same key is a conflict.
 
