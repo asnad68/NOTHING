@@ -1085,6 +1085,10 @@ class NothingApiHandler(BaseHTTPRequestHandler):
                 self._get_event(parts[2], instance)
                 return
 
+            if len(parts) == 4 and parts[:2] == ["v1", "identity"] and parts[2] and parts[3] == "verification-events":
+                self._get_identity_verification_events(parts[2], instance)
+                return
+
             if len(parts) == 4 and parts[:2] == ["v1", "procedures"]:
                 self._get_procedure(parts[2], parts[3], instance)
                 return
@@ -1146,6 +1150,44 @@ class NothingApiHandler(BaseHTTPRequestHandler):
         )
         payload = {
             "data": _identity_view(identity, events, resolution),
+            "meta": _meta(
+                demo=self.store.demo,
+                generated_at=bundle.last_modified,
+            ),
+        }
+        self._serve_json(payload, bundle.last_modified)
+
+    def _get_identity_verification_events(
+        self,
+        nothing_id: str,
+        instance: str,
+    ) -> None:
+        if not NOTHING_ID_RE.fullmatch(nothing_id):
+            self._send_problem(
+                400,
+                "INVALID_ID",
+                "nothing_id must match NTH-XXXXXX.",
+                instance,
+            )
+            return
+
+        try:
+            bundle = self.store.get_identity_bundle(nothing_id)
+        except NotFoundError:
+            self._send_problem(
+                404,
+                "NOT_FOUND",
+                "The requested Nothing ID does not exist.",
+                instance,
+            )
+            return
+
+        events = [_event_view(event.record) for event in bundle.events]
+        payload = {
+            "data": {
+                "nothing_id": nothing_id,
+                "events": events,
+            },
             "meta": _meta(
                 demo=self.store.demo,
                 generated_at=bundle.last_modified,
