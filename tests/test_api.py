@@ -154,6 +154,26 @@ class ReferenceApiHttpTests(unittest.TestCase):
         finally:
             api_module.TENANCY_MODE = old
 
+    def test_http_log_sanitizes_query_strings(self) -> None:
+        import io
+        from contextlib import redirect_stdout
+
+        from src.nothing_api import NothingApiHandler
+
+        handler = object.__new__(NothingApiHandler)
+        handler.command = "GET"
+        handler.path = "/v1/billing/invoices?secret=do-not-log"
+        handler.request_version = "HTTP/1.1"
+        handler._nothing_request_id = "request-test"
+
+        stream = io.StringIO()
+        with redirect_stdout(stream):
+            handler.log_message("%s", handler.path)
+
+        line = stream.getvalue()
+        self.assertIn("/v1/billing/invoices", line)
+        self.assertNotIn("secret=do-not-log", line)
+
     def test_proxy_header_is_not_trusted_by_default(self) -> None:
         import src.nothing_api as api_module
         from email.message import Message
@@ -175,4 +195,3 @@ class ReferenceApiHttpTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
