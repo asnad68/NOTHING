@@ -232,14 +232,23 @@ class PostgreSQLNothingStore:
         self._pool.close()
 
     def health(self) -> bool:
-        """Return readiness only when the database is reachable and schema is current."""
+        """Return readiness only when the database is reachable and schema is exact."""
         try:
             with self._pool.connection() as connection:
                 row = connection.execute(
-                    "SELECT COALESCE(MAX(version), 0) AS version "
-                    "FROM schema_migrations"
+                    """
+                    SELECT
+                        COALESCE(MIN(version), 0) AS min_version,
+                        COALESCE(MAX(version), 0) AS max_version,
+                        COUNT(*) AS version_count
+                    FROM schema_migrations
+                    """
                 ).fetchone()
-            return int(row["version"]) >= STORAGE_SCHEMA_VERSION
+            return (
+                int(row["min_version"]) == 1
+                and int(row["max_version"]) == STORAGE_SCHEMA_VERSION
+                and int(row["version_count"]) == STORAGE_SCHEMA_VERSION
+            )
         except Exception:
             return False
 
@@ -353,6 +362,30 @@ class PostgreSQLNothingStore:
                 "PostgreSQL migrations are missing from storage/migrations/postgres"
             )
 
+        migrations: list[tuple[int, Path]] = []
+        seen_versions: set[int] = set()
+        for path in paths:
+            try:
+                version = int(path.name.split("_", 1)[0])
+            except (TypeError, ValueError) as exc:
+                raise PostgreSQLNotConfiguredError(
+                    f"invalid PostgreSQL migration filename: {path.name}"
+                ) from exc
+            if version in seen_versions:
+                raise PostgreSQLNotConfiguredError(
+                    f"duplicate PostgreSQL migration version: {version}"
+                )
+            seen_versions.add(version)
+            migrations.append((version, path))
+
+        migrations.sort(key=lambda item: item[0])
+        expected_versions = list(range(1, len(migrations) + 1))
+        actual_versions = [version for version, _ in migrations]
+        if actual_versions != expected_versions:
+            raise PostgreSQLNotConfiguredError(
+                "PostgreSQL migration files must form a contiguous sequence starting at v1"
+            )
+
         with self._pool.connection() as connection:
             with connection.transaction():
                 connection.execute(
@@ -371,24 +404,26 @@ class PostgreSQLNothingStore:
                     )
                     """
                 )
-                row = connection.execute(
-                    "SELECT COALESCE(MAX(version), 0) AS version FROM schema_migrations"
-                ).fetchone()
-                current = int(row["version"])
+                applied = connection.execute(
+                    "SELECT version FROM schema_migrations ORDER BY version"
+                ).fetchall()
 
-            migrations: list[tuple[int, Path]] = []
-            for path in paths:
-                try:
-                    version = int(path.name.split("_", 1)[0])
-                except (TypeError, ValueError) as exc:
+                applied_versions = [int(row["version"]) for row in applied]
+                expected_applied = list(range(1, len(applied_versions) + 1))
+                if applied_versions != expected_applied:
                     raise PostgreSQLNotConfiguredError(
-                        f"invalid PostgreSQL migration filename: {path.name}"
-                    ) from exc
-                migrations.append((version, path))
+                        "database migration history is not contiguous"
+                    )
+
+                current = len(applied_versions)
 
             for version, path in migrations:
                 if version <= current:
                     continue
+                if version != current + 1:
+                    raise PostgreSQLNotConfiguredError(
+                        f"cannot skip PostgreSQL migration v{current + 1}"
+                    )
                 sql = path.read_text(encoding="utf-8")
                 with connection.transaction():
                     connection.execute(sql)
@@ -399,6 +434,7 @@ class PostgreSQLNothingStore:
                         """,
                         (version,),
                     )
+                current = version
 
     @contextmanager
     def _transaction(
