@@ -46,7 +46,7 @@ from src.nothing_verify import (
     validate_verification_event,
 )
 
-STORAGE_SCHEMA_VERSION = 4
+STORAGE_SCHEMA_VERSION = 5
 DEFAULT_POOL_MIN_SIZE = 2
 DEFAULT_POOL_MAX_SIZE = 10
 DEFAULT_POOL_TIMEOUT_SECONDS = 10
