@@ -312,10 +312,11 @@ class XrplJsonRpcAdapter:
         delivered = meta.get("delivered_amount")
         if delivered is None:
             delivered = meta.get("DeliveredAmount")
-        if isinstance(delivered, str):
-            amount = int(delivered)
-        else:
-            amount = 0
+        if not isinstance(delivered, str) or not delivered.isdigit():
+            raise ChainAdapterError(
+                "XRPL delivered_amount is unavailable or invalid"
+            )
+        amount = int(delivered)
 
         routing_reference = str(tag) if tag is not None else None
         finality = "final" if validated else "pending"
