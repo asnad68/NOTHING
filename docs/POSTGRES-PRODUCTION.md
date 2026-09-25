@@ -164,3 +164,8 @@ The current adapter is safe as a primary-database store. It does not silently ro
 PostgreSQL 18 is the current major release line as of this repository update, and PostgreSQL 18.6 is the current listed 18.x maintenance release. citeturn592827search0turn592827search5
 
 The application should still verify the exact managed-service version and support policy before deployment.
+
+
+## Runtime versus migration identity
+
+The API runtime must not own schema objects and must not run migrations. Set `NOTHING_POSTGRES_AUTO_MIGRATE=false` for runtime pods. A controlled deployment job runs `python -m src.nothing_postgres` with the migration identity before the application rollout. This separation prevents a compromised API process from gaining schema-administration privileges.
