@@ -82,7 +82,8 @@ def validate_procedure(procedure: Mapping[str, Any]) -> None:
     )
     _require(
         isinstance(procedure.get("id"), str)
-        and PROCEDURE_ID_RE.fullmatch(procedure["id"]) is not None, and procedure["id"].strip(),
+        and bool(procedure["id"].strip())
+        and PROCEDURE_ID_RE.fullmatch(procedure["id"]) is not None,
         "procedure.id must be a non-empty string",
     )
     _require(
@@ -106,7 +107,7 @@ def validate_procedure(procedure: Mapping[str, Any]) -> None:
         "procedure.allowed_results must be unique",
     )
     for status in allowed_results:
-        _require(status in EVENT_STATUSES, "procedure.allowed_results contains an unsupported result")
+        _require(isinstance(status, str) and status in EVENT_STATUSES, "procedure.allowed_results contains an unsupported result")
 
     _require(
         isinstance(procedure.get("requires_evidence"), bool),
