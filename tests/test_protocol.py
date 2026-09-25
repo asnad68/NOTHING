@@ -110,7 +110,7 @@ class ProtocolRelationshipTests(unittest.TestCase):
 
         second = copy.deepcopy(self.event)
         second["event_id"] = "VER-000011"
-        second["occurred_at"] = "2026-09-27T00:00:00Z"
+        second["occurred_at"] = "2026-09-26T00:00:00Z"
         second["supersedes"] = "VER-000010"
 
         with self.assertRaises(RelationshipError):
