@@ -13,33 +13,44 @@
 - [ ] Add formal schema test suite
 
 ## Phase 2 — Verification Engine
-- [ ] Implement schema validation
-- [ ] Implement claim verification interfaces
-- [ ] Implement evidence references
-- [ ] Implement verification event model
-- [ ] Add deterministic test fixtures
+- [x] Implement deterministic identity validation
+- [x] Define evidence record schema
+- [x] Define verification event schema
+- [x] Implement evidence validation
+- [x] Implement verification event validation
+- [x] Add deterministic evidence/event fixtures and tests
+- [x] Define evidence lifecycle and integrity boundaries
+- [x] Define verification event scope and supersession
+- [ ] Add schema-validation parity tests against JSON Schema
+- [ ] Implement claim/evidence relationship resolution
+- [ ] Implement verification procedure registry
 
 ## Phase 3 — Verify Web
 - [ ] Build public identity lookup page
 - [ ] Build claim/evidence display
+- [ ] Build verification-event timeline
 - [ ] Build revocation display
 - [ ] Add human-readable Nothing Mark
 
 ## Phase 4 — API
 - [ ] Implement `GET /v1/identity/{nothing_id}`
+- [ ] Implement claim/evidence/event resources
 - [ ] Define API error model
 - [ ] Define content types and versioning
 - [ ] Add rate limiting and abuse controls
+- [ ] Define cache and freshness semantics
 
 ## Phase 5 — Pilot
 - [ ] Create a controlled pilot dataset
 - [ ] Test business identity onboarding
 - [ ] Test authorization relationships
-- [ ] Test revocation workflows
+- [ ] Test evidence collection workflows
+- [ ] Test verification lifecycle
+- [ ] Test revocation and supersession workflows
 
 ## Phase 6 — Network
 - [ ] Define interoperability boundaries
-- [ ] Research verifiable credentials
+- [ ] Research W3C Verifiable Credentials
 - [ ] Research OpenID for Verifiable Credentials
 - [ ] Research LEI/GLEIF relationships
 - [ ] Research BIMI and domain signals
