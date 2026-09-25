@@ -157,10 +157,19 @@ def parse_ingestion_request(
                 f"{collection} exceeds the {max_records}-record limit"
             )
         items: list[dict[str, Any]] = []
+        id_field = {
+            "identities": "nothing_id",
+            "evidence": "evidence_id",
+            "verification_events": "event_id",
+        }[collection]
         for index, item in enumerate(value):
             if not isinstance(item, dict):
                 raise IngestionRequestError(
                     f"{collection}[{index}] must be a JSON object"
+                )
+            if not isinstance(item.get(id_field), str) or not item[id_field]:
+                raise IngestionRequestError(
+                    f"{collection}[{index}] must contain a non-empty {id_field}"
                 )
             items.append(item)
         bundle[collection] = items
