@@ -131,6 +131,7 @@ class PostgreSQLNothingStore:
             ) from exc
 
         self._psycopg = psycopg
+        self._IsolationLevel = psycopg.IsolationLevel.SERIALIZABLE
         self._SerializationFailure = psycopg.errors.SerializationFailure
         self._DeadlockDetected = psycopg.errors.DeadlockDetected
         self._UniqueViolation = psycopg.errors.UniqueViolation
@@ -292,6 +293,7 @@ class PostgreSQLNothingStore:
     ) -> Iterator[Any]:
         del retryable
         with self._pool.connection() as connection:
+            connection.isolation_level = self._IsolationLevel
             with connection.transaction():
                 if self._statement_timeout_ms:
                     connection.execute(
@@ -303,9 +305,6 @@ class PostgreSQLNothingStore:
                         "SELECT set_config(%s, %s, true)",
                         ("lock_timeout", f"{self._lock_timeout_ms}ms"),
                     )
-                connection.execute(
-                    "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE"
-                )
                 yield connection
 
     @staticmethod
