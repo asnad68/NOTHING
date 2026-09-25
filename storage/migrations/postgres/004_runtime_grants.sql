@@ -19,10 +19,17 @@ BEGIN
 END $$;
 
 GRANT USAGE ON SCHEMA public TO nothing_app;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO nothing_app;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO nothing_app;
+
+-- Runtime writes are limited to the mutation tables actually used by the
+-- authenticated ingestion path. Immutable history is never granted UPDATE or
+-- DELETE privileges, even though database triggers also enforce immutability.
+GRANT INSERT ON identity_revisions, evidence, verification_events,
+    event_evidence, audit_log, ingestion_idempotency TO nothing_app;
+GRANT UPDATE ON identity_heads TO nothing_app;
 
 ALTER DEFAULT PRIVILEGES FOR ROLE nothing_migrator IN SCHEMA public
-    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO nothing_app;
+    GRANT SELECT ON TABLES TO nothing_app;
 
 -- The application role must never own the schema objects.
 ALTER TABLE schema_migrations OWNER TO nothing_migrator;
