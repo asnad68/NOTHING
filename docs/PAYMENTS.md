@@ -1,61 +1,14 @@
-# Crypto payment boundary
+[object Object]
 
-The repository now contains the public receiving-address registry at:
-`config/payment_addresses.json`
+## Routing rule for automated subscriptions
 
-## Supported receiving assets
+The addresses in payment_addresses.json are treasury/shared receiving addresses. They are not sufficient for safe automatic invoice attribution when multiple invoices may exist concurrently.
 
-| Asset | Network | Address | Status |
-|---|---|---|---|
-| XRP | XRPL | `r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2` | Enabled for manual receiving |
-| ETH | Ethereum | `0xE1c90171271B5325beE02592ACc50A510448d03E` | Enabled for manual receiving |
-| BTC | Bitcoin | `3ABUrDAmi6w9TRsHuwFgdcDBLvXUzbAfZY` | Enabled for manual receiving |
-| USDT | **Not specified** | `0xE1c90171271B5325beE02592ACc50A510448d03E` | **Disabled until the exact network is declared** |
+Automatic entitlement activation requires an invoice-specific settlement route:
 
-The ETH and USDT addresses share the same hexadecimal address string, but that does not by itself identify the USDT settlement network. The checkout layer must require an explicit USDT network before displaying or accepting payment instructions.
+- a unique receiving address for the invoice, or
+- for XRPL, a unique destination tag together with the treasury address
 
-## Current payment boundary
+A shared treasury address remains available for manual payment review.
 
-The addresses are public receiving identifiers, not credentials.
-
-Never place any of the following in Git:
-
-- private keys
-- seed phrases
-- wallet passwords
-- signing secrets
-- exchange API secrets
-
-The current project does **not** automatically confirm a subscription from a blockchain transaction. A future payment implementation must bind each payment to an invoice/order identifier and verify the correct asset, network, amount, destination and confirmation state before granting subscription access.
-
-Before enabling automated settlement, define:
-
-1. subscription price and currency
-2. invoice identifier
-3. exact chain/network for each supported asset
-4. confirmation policy
-5. underpayment/overpayment policy
-6. duplicate transaction handling
-7. refund policy
-8. exchange-rate policy, if prices are denominated in fiat
-9. webhook/indexer security model
-10. audit trail for payment-to-subscription entitlement
-
-Until those controls exist, the safe mode is manual verification.
-
-
-## Payment engine status
-
-The repository now has a separate settlement domain and PostgreSQL billing boundary in PAYMENT-SUBSCRIPTION-ARCHITECTURE.md.
-
-The payment engine deliberately stops before live chain connectivity. It accepts only a trusted chain adapter observation and then performs database-controlled matching, allocation and entitlement activation.
-
-The following are not accepted as client authority:
-
-- confirmation count
-- finality status
-- transaction success
-- transferred amount
-- destination
-- token contract
-
+The payment settlement service therefore fails closed to review_required when an invoice has manual_shared routing.
