@@ -57,6 +57,11 @@ def _require(condition: bool, message: str) -> None:
         raise ValidationError(message)
 
 
+def _reject_extra_keys(record: Mapping[str, Any], allowed: set[str], field: str) -> None:
+    extras = set(record.keys()) - allowed
+    _require(not extras, f"{field} contains unsupported fields: {sorted(extras)}")
+
+
 def _optional_string(value: Any, field: str) -> None:
     if value is not None:
         _require(
@@ -76,7 +81,8 @@ def _optional_datetime(value: Any, field: str) -> None:
     if value is not None:
         _require(isinstance(value, str), f"{field} must be an ISO-8601 string")
         try:
-            datetime.fromisoformat(value.replace("Z", "+00:00"))
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            _require(parsed.tzinfo is not None and parsed.utcoffset() is not None, f"{field} must include a timezone offset")
         except ValueError as exc:
             raise ValidationError(
                 f"{field} must be a valid ISO-8601 date-time"
@@ -97,6 +103,7 @@ def _optional_uri(value: Any, field: str) -> None:
 
 def _validate_source(source: Any) -> None:
     _require(isinstance(source, Mapping), "claim.source must be an object")
+    _reject_extra_keys(source, {"type", "reference", "checked_at"}, "claim.source")
     if "type" in source:
         _require(
             source["type"] in SOURCE_TYPES,
@@ -111,6 +118,7 @@ def _validate_authorization(authorization: Any) -> None:
         isinstance(authorization, Mapping),
         "claim.authorization must be an object",
     )
+    _reject_extra_keys(authorization, {"status", "method"}, "claim.authorization")
     if "status" in authorization:
         _require(
             authorization["status"] in AUTHORIZATION_STATUSES,
@@ -122,6 +130,7 @@ def _validate_authorization(authorization: Any) -> None:
 def validate_identity(record: Mapping[str, Any]) -> None:
     """Validate deterministic structural rules for an identity record."""
     _require(isinstance(record, Mapping), "identity must be an object")
+    _reject_extra_keys(record, {"nothing_id", "version", "subject", "claims", "revocation"}, "identity")
     _require(
         isinstance(record.get("nothing_id"), str)
         and NOTHING_ID_RE.fullmatch(record["nothing_id"]) is not None,
@@ -131,6 +140,7 @@ def validate_identity(record: Mapping[str, Any]) -> None:
 
     subject = record.get("subject")
     _require(isinstance(subject, Mapping), "subject must be an object")
+    _reject_extra_keys(subject, {"name", "type", "website"}, "identity.subject")
     _required_string(subject.get("name"), "subject.name")
     _require(
         subject.get("type") in SUBJECT_TYPES,
@@ -144,6 +154,7 @@ def validate_identity(record: Mapping[str, Any]) -> None:
     seen_claim_ids: set[str] = set()
     for claim in claims:
         _require(isinstance(claim, Mapping), "each claim must be an object")
+        _reject_extra_keys(claim, {"claim_id", "statement", "status", "source", "authorization", "valid_from", "valid_until"}, "identity.claim")
         claim_id = claim.get("claim_id")
         _require(
             isinstance(claim_id, str)
@@ -173,6 +184,7 @@ def validate_identity(record: Mapping[str, Any]) -> None:
     if "revocation" in record:
         revocation = record["revocation"]
         _require(isinstance(revocation, Mapping), "revocation must be an object")
+        _reject_extra_keys(revocation, {"status", "reason", "revoked_at"}, "identity.revocation")
         _required_string(revocation.get("status"), "revocation.status")
         _require(
             revocation["status"] in REVOCATION_STATUSES,
@@ -185,6 +197,7 @@ def validate_identity(record: Mapping[str, Any]) -> None:
 def validate_evidence(record: Mapping[str, Any]) -> None:
     """Validate an EVD-XXXXXX evidence record."""
     _require(isinstance(record, Mapping), "evidence must be an object")
+    _reject_extra_keys(record, {"evidence_id", "version", "type", "source", "collected_at", "integrity", "notes"}, "evidence")
     evidence_id = record.get("evidence_id")
     _require(
         isinstance(evidence_id, str)
@@ -199,6 +212,7 @@ def validate_evidence(record: Mapping[str, Any]) -> None:
 
     source = record.get("source")
     _require(isinstance(source, Mapping), "evidence.source must be an object")
+    _reject_extra_keys(source, {"reference", "title", "publisher", "accessed_at"}, "evidence.source")
     _required_string(
         source.get("reference"),
         "evidence.source.reference",
@@ -213,6 +227,8 @@ def validate_evidence(record: Mapping[str, Any]) -> None:
     _required_datetime(record.get("collected_at"), "evidence.collected_at")
 
     integrity = record.get("integrity")
+    _require(isinstance(integrity, Mapping), "evidence.integrity is required")
+    _reject_extra_keys(integrity, {"method", "digest"}, "evidence.integrity")
     _require(
         isinstance(integrity, Mapping),
         "evidence.integrity is required",
@@ -245,6 +261,7 @@ def validate_verification_event(record: Mapping[str, Any]) -> None:
         isinstance(record, Mapping),
         "verification event must be an object",
     )
+    _reject_extra_keys(record, {"event_id", "version", "occurred_at", "subject", "claim_id", "procedure", "verifier", "evidence", "result", "supersedes", "metadata"}, "verification event")
     event_id = record.get("event_id")
     _require(
         isinstance(event_id, str)
@@ -272,6 +289,8 @@ def validate_verification_event(record: Mapping[str, Any]) -> None:
     )
 
     procedure = record.get("procedure")
+    _require(isinstance(procedure, Mapping), "verification event procedure is required")
+    _reject_extra_keys(procedure, {"id", "version"}, "verification event procedure")
     _require(
         isinstance(procedure, Mapping),
         "verification event procedure is required",
@@ -281,6 +300,8 @@ def validate_verification_event(record: Mapping[str, Any]) -> None:
 
     if "verifier" in record:
         verifier = record["verifier"]
+        _require(isinstance(verifier, Mapping), "verification event verifier must be an object")
+        _reject_extra_keys(verifier, {"type", "identifier"}, "verification event verifier")
         _require(
             isinstance(verifier, Mapping),
             "verification event verifier must be an object",
@@ -314,6 +335,8 @@ def validate_verification_event(record: Mapping[str, Any]) -> None:
         seen.add(evidence_id)
 
     result = record.get("result")
+    _require(isinstance(result, Mapping), "verification event result is required")
+    _reject_extra_keys(result, {"status", "scope", "reason"}, "verification event result")
     _require(
         isinstance(result, Mapping),
         "verification event result is required",
