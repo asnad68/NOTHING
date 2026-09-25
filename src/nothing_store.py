@@ -107,544 +107,6 @@ class NothingStore(Protocol):
         ingestion_id: str,
         recorded_at: str | None = None,
     ) -> IngestionResult:
-        """Atomically validate, persist and deduplicate an authenticated bundle."""
-        if not isinstance(actor, str) or not actor.strip():
-            raise ValueError("actor must be a non-empty string")
-        if not isinstance(idempotency_key, str) or not idempotency_key.strip():
-            raise ValueError("idempotency_key must be a non-empty string")
-        if (
-            not isinstance(request_sha256, str)
-            or len(request_sha256) != 64
-            or any(ch not in "0123456789abcdefABCDEF" for ch in request_sha256)
-        ):
-            raise ValueError("request_sha256 must be a SHA-256 hex digest")
-        if not isinstance(ingestion_id, str) or not ingestion_id.strip():
-            raise ValueError("ingestion_id must be a non-empty string")
-
-        expected_keys = {"identities", "evidence", "verification_events"}
-        if set(bundle.keys()) != expected_keys:
-            raise ValidationError(
-                "ingestion bundle must contain exactly identities, evidence, and verification_events"
-            )
-
-        identities_raw = bundle["identities"]
-        evidence_raw = bundle["evidence"]
-        events_raw = bundle["verification_events"]
-        if not all(
-            isinstance(value, list)
-            for value in (identities_raw, evidence_raw, events_raw)
-        ):
-            raise ValidationError("ingestion bundle collections must be arrays")
-
-        identities = [copy.deepcopy(dict(item)) for item in identities_raw]
-        evidence_records = [copy.deepcopy(dict(item)) for item in evidence_raw]
-        events = [copy.deepcopy(dict(item)) for item in events_raw]
-
-        for identity in identities:
-            validate_identity(identity)
-        for evidence in evidence_records:
-            validate_evidence(evidence)
-        for event in events:
-            validate_verification_event(event)
-
-        def ensure_unique(values: Sequence[str], label: str) -> None:
-            if len(values) != len(set(values)):
-                raise ValidationError(f"duplicate {label} in ingestion bundle")
-
-        ensure_unique([item["nothing_id"] for item in identities], "nothing_id")
-        ensure_unique([item["evidence_id"] for item in evidence_records], "evidence_id")
-        ensure_unique([item["event_id"] for item in events], "event_id")
-
-        if not identities and not evidence_records and not events:
-            raise ValidationError("ingestion bundle must contain at least one record")
-
-        recorded = recorded_at or _utc_now()
-        identity_payloads = {item["nothing_id"]: item for item in identities}
-        evidence_payloads = {item["evidence_id"]: item for item in evidence_records}
-        event_payloads = {item["event_id"]: item for item in events}
-
-        with self._connect() as connection:
-            try:
-                connection.execute("BEGIN IMMEDIATE")
-
-                existing_ingestion = connection.execute(
-                    """
-                    SELECT request_sha256, ingestion_id, result_json, recorded_at
-                    FROM ingestion_idempotency
-                    WHERE actor = ? AND idempotency_key = ?
-                    """,
-                    (actor, idempotency_key),
-                ).fetchone()
-
-                if existing_ingestion is not None:
-                    if existing_ingestion["request_sha256"] != request_sha256:
-                        raise ConflictError(
-                            "Idempotency-Key has already been used with a different request"
-                        )
-                    connection.execute("COMMIT")
-                    return IngestionResult(
-                        data=json.loads(existing_ingestion["result_json"]),
-                        recorded_at=existing_ingestion["recorded_at"],
-                        replayed=True,
-                    )
-
-                identity_state: dict[str, dict[str, Any]] = {}
-                identity_actions: list[dict[str, Any]] = []
-
-                for nothing_id, identity in identity_payloads.items():
-                    row = connection.execute(
-                        """
-                        SELECT r.*
-                        FROM identity_heads h
-                        JOIN identity_revisions r
-                          ON r.nothing_id = h.nothing_id AND r.revision = h.revision
-                        WHERE h.nothing_id = ?
-                        """,
-                        (nothing_id,),
-                    ).fetchone()
-
-                    digest = _content_hash(identity)
-                    if row is None:
-                        revision = 1
-                        previous_hash = None
-                        written = True
-                    elif row["content_sha256"] == digest:
-                        revision = int(row["revision"])
-                        previous_hash = row["content_sha256"]
-                        written = False
-                    else:
-                        revision = int(row["revision"]) + 1
-                        previous_hash = row["content_sha256"]
-                        written = True
-
-                    identity_state[nothing_id] = identity
-                    identity_actions.append(
-                        {
-                            "id": nothing_id,
-                            "revision": revision,
-                            "written": written,
-                            "payload": identity,
-                            "digest": digest,
-                            "previous_hash": previous_hash,
-                        }
-                    )
-
-                for event in events:
-                    if event["subject"] in identity_state:
-                        continue
-                    row = connection.execute(
-                        """
-                        SELECT r.*
-                        FROM identity_heads h
-                        JOIN identity_revisions r
-                          ON r.nothing_id = h.nothing_id AND r.revision = h.revision
-                        WHERE h.nothing_id = ?
-                        """,
-                        (event["subject"],),
-                    ).fetchone()
-                    if row is None:
-                        raise NotFoundError(event["subject"])
-                    identity_state[event["subject"]] = self._stored_identity(row).record
-
-                evidence_by_id: dict[str, dict[str, Any]] = {}
-                existing_evidence_by_id: dict[str, sqlite3.Row] = {}
-                if evidence_payloads:
-                    placeholders = ",".join("?" for _ in evidence_payloads)
-                    rows = connection.execute(
-                        f"""
-                        SELECT *
-                        FROM evidence
-                        WHERE evidence_id IN ({placeholders})
-                        """,
-                        list(evidence_payloads),
-                    ).fetchall()
-                    existing_evidence_by_id = {
-                        row["evidence_id"]: row for row in rows
-                    }
-
-                evidence_actions: list[dict[str, Any]] = []
-                for evidence_id, evidence in evidence_payloads.items():
-                    digest = _content_hash(evidence)
-                    existing = existing_evidence_by_id.get(evidence_id)
-                    if existing is not None and existing["content_sha256"] != digest:
-                        raise ConflictError(
-                            f"evidence {evidence_id} is immutable; create a new evidence ID"
-                        )
-                    evidence_by_id[evidence_id] = evidence
-                    evidence_actions.append(
-                        {
-                            "id": evidence_id,
-                            "written": existing is None,
-                            "payload": evidence,
-                            "digest": digest,
-                        }
-                    )
-
-                affected_subjects = sorted({event["subject"] for event in events})
-                existing_events_by_subject: dict[str, list[StoredRecord]] = {}
-                for subject in affected_subjects:
-                    current_events = self._load_events_for_subject(
-                        connection,
-                        subject,
-                    )
-                    existing_events_by_subject[subject] = current_events
-                    for stored in current_events:
-                        for evidence_id in stored.record.get("evidence", []):
-                            if evidence_id in evidence_by_id:
-                                continue
-                            row = connection.execute(
-                                "SELECT * FROM evidence WHERE evidence_id = ?",
-                                (evidence_id,),
-                            ).fetchone()
-                            if row is None:
-                                raise NotFoundError(evidence_id)
-                            evidence_by_id[evidence_id] = self._stored_evidence(row).record
-
-                existing_event_by_id: dict[str, sqlite3.Row] = {}
-                if event_payloads:
-                    placeholders = ",".join("?" for _ in event_payloads)
-                    rows = connection.execute(
-                        f"""
-                        SELECT *
-                        FROM verification_events
-                        WHERE event_id IN ({placeholders})
-                        """,
-                        list(event_payloads),
-                    ).fetchall()
-                    existing_event_by_id = {
-                        row["event_id"]: row for row in rows
-                    }
-
-                event_actions: list[dict[str, Any]] = []
-                new_events_by_subject: dict[str, list[dict[str, Any]]] = {}
-                for event_id, event in event_payloads.items():
-                    digest = _content_hash(event)
-                    existing = existing_event_by_id.get(event_id)
-                    if existing is not None:
-                        if existing["content_sha256"] != digest:
-                            raise ConflictError(
-                                f"verification event {event_id} is immutable; create a new event"
-                            )
-                        written = False
-                    else:
-                        written = True
-                        new_events_by_subject.setdefault(event["subject"], []).append(event)
-
-                    for evidence_id in event.get("evidence", []):
-                        if evidence_id not in evidence_by_id:
-                            raise NotFoundError(evidence_id)
-
-                    event_actions.append(
-                        {
-                            "id": event_id,
-                            "written": written,
-                            "payload": event,
-                            "digest": digest,
-                        }
-                    )
-
-                for event in events:
-                    procedure_key = (
-                        event["procedure"]["id"],
-                        event["procedure"]["version"],
-                    )
-                    row = connection.execute(
-                        """
-                        SELECT 1
-                        FROM procedures
-                        WHERE procedure_id = ? AND version = ?
-                        """,
-                        procedure_key,
-                    ).fetchone()
-                    if row is None:
-                        raise NotFoundError(
-                            f"{procedure_key[0]}@{procedure_key[1]}"
-                        )
-
-                registry = self._load_registry(connection)
-                for subject in affected_subjects:
-                    candidate_events = list(existing_events_by_subject[subject])
-                    candidate_events.extend(
-                        StoredRecord(
-                            record=event,
-                            content_sha256=_content_hash(event),
-                            recorded_at=recorded,
-                        )
-                        for event in new_events_by_subject.get(subject, [])
-                    )
-                    resolve_claim_relationships(
-                        identity_state[subject],
-                        list(evidence_by_id.values()),
-                        [stored.record for stored in candidate_events],
-                        registry,
-                    )
-
-                for action in identity_actions:
-                    if not action["written"]:
-                        continue
-                    connection.execute(
-                        """
-                        INSERT INTO identity_revisions(
-                            nothing_id, revision, protocol_version, payload_json,
-                            content_sha256, recorded_at, recorded_by,
-                            previous_content_sha256
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            action["id"],
-                            action["revision"],
-                            action["payload"]["version"],
-                            _canonical_json(action["payload"]),
-                            action["digest"],
-                            recorded,
-                            actor,
-                            action["previous_hash"],
-                        ),
-                    )
-                    connection.execute(
-                        """
-                        INSERT INTO identity_heads(nothing_id, revision, content_sha256)
-                        VALUES (?, ?, ?)
-                        ON CONFLICT(nothing_id) DO UPDATE SET
-                            revision = excluded.revision,
-                            content_sha256 = excluded.content_sha256
-                        """,
-                        (
-                            action["id"],
-                            action["revision"],
-                            action["digest"],
-                        ),
-                    )
-                    connection.execute(
-                        """
-                        INSERT INTO audit_log(
-                            recorded_at, actor, action, record_type, record_id,
-                            revision, content_sha256, details_json
-                        ) VALUES (?, ?, 'APPEND', 'identity', ?, ?, ?, ?)
-                        """,
-                        (
-                            recorded,
-                            actor,
-                            action["id"],
-                            action["revision"],
-                            action["digest"],
-                            json.dumps(
-                                {
-                                    "protocol_version": action["payload"]["version"],
-                                    "ingestion_id": ingestion_id,
-                                    "idempotency_key": idempotency_key,
-                                },
-                                sort_keys=True,
-                                separators=(",", ":"),
-                            ),
-                        ),
-                    )
-
-                for action in evidence_actions:
-                    if not action["written"]:
-                        continue
-                    evidence = action["payload"]
-                    connection.execute(
-                        """
-                        INSERT INTO evidence(
-                            evidence_id, protocol_version, payload_json,
-                            content_sha256, recorded_at, recorded_by
-                        ) VALUES (?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            action["id"],
-                            evidence["version"],
-                            _canonical_json(evidence),
-                            action["digest"],
-                            recorded,
-                            actor,
-                        ),
-                    )
-                    connection.execute(
-                        """
-                        INSERT INTO audit_log(
-                            recorded_at, actor, action, record_type, record_id,
-                            revision, content_sha256, details_json
-                        ) VALUES (?, ?, 'APPEND', 'evidence', ?, NULL, ?, ?)
-                        """,
-                        (
-                            recorded,
-                            actor,
-                            action["id"],
-                            action["digest"],
-                            json.dumps(
-                                {
-                                    "ingestion_id": ingestion_id,
-                                    "idempotency_key": idempotency_key,
-                                },
-                                sort_keys=True,
-                                separators=(",", ":"),
-                            ),
-                        ),
-                    )
-
-                for action in event_actions:
-                    if not action["written"]:
-                        continue
-                    event = action["payload"]
-                    connection.execute(
-                        """
-                        INSERT INTO verification_events(
-                            event_id, protocol_version, subject, claim_id, occurred_at,
-                            procedure_id, procedure_version, supersedes_event_id,
-                            payload_json, content_sha256, recorded_at, recorded_by
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            action["id"],
-                            event["version"],
-                            event["subject"],
-                            event["claim_id"],
-                            event["occurred_at"],
-                            event["procedure"]["id"],
-                            event["procedure"]["version"],
-                            event.get("supersedes"),
-                            _canonical_json(event),
-                            action["digest"],
-                            recorded,
-                            actor,
-                        ),
-                    )
-                    for evidence_id in event.get("evidence", []):
-                        connection.execute(
-                            """
-                            INSERT INTO event_evidence(event_id, evidence_id)
-                            VALUES (?, ?)
-                            """,
-                            (action["id"], evidence_id),
-                        )
-                    connection.execute(
-                        """
-                        INSERT INTO audit_log(
-                            recorded_at, actor, action, record_type, record_id,
-                            revision, content_sha256, details_json
-                        ) VALUES (?, ?, 'APPEND', 'verification_event', ?, NULL, ?, ?)
-                        """,
-                        (
-                            recorded,
-                            actor,
-                            action["id"],
-                            action["digest"],
-                            json.dumps(
-                                {
-                                    "subject": event["subject"],
-                                    "claim_id": event["claim_id"],
-                                    "ingestion_id": ingestion_id,
-                                    "idempotency_key": idempotency_key,
-                                },
-                                sort_keys=True,
-                                separators=(",", ":"),
-                            ),
-                        ),
-                    )
-
-                result_data = {
-                    "ingestion_id": ingestion_id,
-                    "accepted": True,
-                    "identities": [
-                        {
-                            "id": action["id"],
-                            "revision": action["revision"],
-                            "written": action["written"],
-                        }
-                        for action in identity_actions
-                    ],
-                    "evidence": [
-                        {
-                            "id": action["id"],
-                            "written": action["written"],
-                        }
-                        for action in evidence_actions
-                    ],
-                    "verification_events": [
-                        {
-                            "id": action["id"],
-                            "written": action["written"],
-                        }
-                        for action in event_actions
-                    ],
-                }
-
-                connection.execute(
-                    """
-                    INSERT INTO audit_log(
-                        recorded_at, actor, action, record_type, record_id,
-                        revision, content_sha256, details_json
-                    ) VALUES (?, ?, 'ACCEPT', 'ingestion', ?, NULL, ?, ?)
-                    """,
-                    (
-                        recorded,
-                        actor,
-                        ingestion_id,
-                        request_sha256,
-                        json.dumps(
-                            {
-                                "idempotency_key": idempotency_key,
-                                "identity_count": len(identity_actions),
-                                "evidence_count": len(evidence_actions),
-                                "verification_event_count": len(event_actions),
-                            },
-                            sort_keys=True,
-                            separators=(",", ":"),
-                        ),
-                    ),
-                )
-
-                connection.execute(
-                    """
-                    INSERT INTO ingestion_idempotency(
-                        actor, idempotency_key, request_sha256, ingestion_id,
-                        status_code, result_json, recorded_at
-                    ) VALUES (?, ?, ?, ?, 200, ?, ?)
-                    """,
-                    (
-                        actor,
-                        idempotency_key,
-                        request_sha256,
-                        ingestion_id,
-                        _canonical_json(result_data),
-                        recorded,
-                    ),
-                )
-
-                connection.execute("COMMIT")
-                return IngestionResult(
-                    data=result_data,
-                    recorded_at=recorded,
-                    replayed=False,
-                )
-            except Exception:
-                connection.execute("ROLLBACK")
-                raise
-
-
-    def get_identity_bundle(self, nothing_id: str) -> IdentityBundle:
-        ...
-
-    def get_evidence(self, evidence_id: str) -> StoredRecord:
-        ...
-
-    def get_event(self, event_id: str) -> StoredRecord:
-        ...
-
-    def get_procedure(self, procedure_id: str, version: str) -> StoredRecord:
-        ...
-
-    def ingest_bundle(
-        self,
-        bundle: Mapping[str, Any],
-        *,
-        actor: str,
-        idempotency_key: str,
-        request_sha256: str,
-        ingestion_id: str,
-        recorded_at: str | None = None,
-    ) -> IngestionResult:
         ...
 
 
@@ -1546,6 +1008,557 @@ class SQLiteNothingStore:
             except Exception:
                 connection.execute("ROLLBACK")
                 raise
+
+    def ingest_bundle(
+        self,
+        bundle: Mapping[str, Any],
+        *,
+        actor: str,
+        idempotency_key: str,
+        request_sha256: str,
+        ingestion_id: str,
+        recorded_at: str | None = None,
+    ) -> IngestionResult:
+        """Atomically validate, persist and deduplicate an authenticated bundle."""
+        if not isinstance(actor, str) or not actor.strip():
+            raise ValueError("actor must be a non-empty string")
+        if not isinstance(idempotency_key, str) or not idempotency_key.strip():
+            raise ValueError("idempotency_key must be a non-empty string")
+        if (
+            not isinstance(request_sha256, str)
+            or len(request_sha256) != 64
+            or any(ch not in "0123456789abcdefABCDEF" for ch in request_sha256)
+        ):
+            raise ValueError("request_sha256 must be a SHA-256 hex digest")
+        if not isinstance(ingestion_id, str) or not ingestion_id.strip():
+            raise ValueError("ingestion_id must be a non-empty string")
+
+        expected_keys = {"identities", "evidence", "verification_events"}
+        if set(bundle.keys()) != expected_keys:
+            raise ValidationError(
+                "ingestion bundle must contain exactly identities, evidence, and verification_events"
+            )
+
+        identities_raw = bundle["identities"]
+        evidence_raw = bundle["evidence"]
+        events_raw = bundle["verification_events"]
+        if not all(
+            isinstance(value, list)
+            for value in (identities_raw, evidence_raw, events_raw)
+        ):
+            raise ValidationError("ingestion bundle collections must be arrays")
+
+        identities = [copy.deepcopy(dict(item)) for item in identities_raw]
+        evidence_records = [copy.deepcopy(dict(item)) for item in evidence_raw]
+        events = [copy.deepcopy(dict(item)) for item in events_raw]
+
+        for identity in identities:
+            validate_identity(identity)
+        for evidence in evidence_records:
+            validate_evidence(evidence)
+        for event in events:
+            validate_verification_event(event)
+
+        def ensure_unique(values: Sequence[str], label: str) -> None:
+            if len(values) != len(set(values)):
+                raise ValidationError(f"duplicate {label} in ingestion bundle")
+
+        ensure_unique([item["nothing_id"] for item in identities], "nothing_id")
+        ensure_unique([item["evidence_id"] for item in evidence_records], "evidence_id")
+        ensure_unique([item["event_id"] for item in events], "event_id")
+
+        if not identities and not evidence_records and not events:
+            raise ValidationError("ingestion bundle must contain at least one record")
+
+        recorded = recorded_at or _utc_now()
+        identity_payloads = {item["nothing_id"]: item for item in identities}
+        evidence_payloads = {item["evidence_id"]: item for item in evidence_records}
+        event_payloads = {item["event_id"]: item for item in events}
+
+        with self._connect() as connection:
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+
+                existing_ingestion = connection.execute(
+                    """
+                    SELECT request_sha256, ingestion_id, result_json, recorded_at
+                    FROM ingestion_idempotency
+                    WHERE actor = ? AND idempotency_key = ?
+                    """,
+                    (actor, idempotency_key),
+                ).fetchone()
+
+                if existing_ingestion is not None:
+                    if existing_ingestion["request_sha256"] != request_sha256:
+                        raise ConflictError(
+                            "Idempotency-Key has already been used with a different request"
+                        )
+                    connection.execute("COMMIT")
+                    return IngestionResult(
+                        data=json.loads(existing_ingestion["result_json"]),
+                        recorded_at=existing_ingestion["recorded_at"],
+                        replayed=True,
+                    )
+
+                identity_state: dict[str, dict[str, Any]] = {}
+                identity_actions: list[dict[str, Any]] = []
+
+                for nothing_id, identity in identity_payloads.items():
+                    row = connection.execute(
+                        """
+                        SELECT r.*
+                        FROM identity_heads h
+                        JOIN identity_revisions r
+                          ON r.nothing_id = h.nothing_id AND r.revision = h.revision
+                        WHERE h.nothing_id = ?
+                        """,
+                        (nothing_id,),
+                    ).fetchone()
+
+                    digest = _content_hash(identity)
+                    if row is None:
+                        revision = 1
+                        previous_hash = None
+                        written = True
+                    elif row["content_sha256"] == digest:
+                        revision = int(row["revision"])
+                        previous_hash = row["content_sha256"]
+                        written = False
+                    else:
+                        revision = int(row["revision"]) + 1
+                        previous_hash = row["content_sha256"]
+                        written = True
+
+                    identity_state[nothing_id] = identity
+                    identity_actions.append(
+                        {
+                            "id": nothing_id,
+                            "revision": revision,
+                            "written": written,
+                            "payload": identity,
+                            "digest": digest,
+                            "previous_hash": previous_hash,
+                        }
+                    )
+
+                for event in events:
+                    if event["subject"] in identity_state:
+                        continue
+                    row = connection.execute(
+                        """
+                        SELECT r.*
+                        FROM identity_heads h
+                        JOIN identity_revisions r
+                          ON r.nothing_id = h.nothing_id AND r.revision = h.revision
+                        WHERE h.nothing_id = ?
+                        """,
+                        (event["subject"],),
+                    ).fetchone()
+                    if row is None:
+                        raise NotFoundError(event["subject"])
+                    identity_state[event["subject"]] = self._stored_identity(row).record
+
+                evidence_by_id: dict[str, dict[str, Any]] = {}
+                existing_evidence_by_id: dict[str, sqlite3.Row] = {}
+                if evidence_payloads:
+                    placeholders = ",".join("?" for _ in evidence_payloads)
+                    rows = connection.execute(
+                        f"""
+                        SELECT *
+                        FROM evidence
+                        WHERE evidence_id IN ({placeholders})
+                        """,
+                        list(evidence_payloads),
+                    ).fetchall()
+                    existing_evidence_by_id = {
+                        row["evidence_id"]: row for row in rows
+                    }
+
+                evidence_actions: list[dict[str, Any]] = []
+                for evidence_id, evidence in evidence_payloads.items():
+                    digest = _content_hash(evidence)
+                    existing = existing_evidence_by_id.get(evidence_id)
+                    if existing is not None and existing["content_sha256"] != digest:
+                        raise ConflictError(
+                            f"evidence {evidence_id} is immutable; create a new evidence ID"
+                        )
+                    evidence_by_id[evidence_id] = evidence
+                    evidence_actions.append(
+                        {
+                            "id": evidence_id,
+                            "written": existing is None,
+                            "payload": evidence,
+                            "digest": digest,
+                        }
+                    )
+
+                affected_subjects = sorted({event["subject"] for event in events})
+                existing_events_by_subject: dict[str, list[StoredRecord]] = {}
+                for subject in affected_subjects:
+                    current_events = self._load_events_for_subject(
+                        connection,
+                        subject,
+                    )
+                    existing_events_by_subject[subject] = current_events
+                    for stored in current_events:
+                        for evidence_id in stored.record.get("evidence", []):
+                            if evidence_id in evidence_by_id:
+                                continue
+                            row = connection.execute(
+                                "SELECT * FROM evidence WHERE evidence_id = ?",
+                                (evidence_id,),
+                            ).fetchone()
+                            if row is None:
+                                raise NotFoundError(evidence_id)
+                            evidence_by_id[evidence_id] = self._stored_evidence(row).record
+
+                existing_event_by_id: dict[str, sqlite3.Row] = {}
+                if event_payloads:
+                    placeholders = ",".join("?" for _ in event_payloads)
+                    rows = connection.execute(
+                        f"""
+                        SELECT *
+                        FROM verification_events
+                        WHERE event_id IN ({placeholders})
+                        """,
+                        list(event_payloads),
+                    ).fetchall()
+                    existing_event_by_id = {
+                        row["event_id"]: row for row in rows
+                    }
+
+                event_actions: list[dict[str, Any]] = []
+                new_events_by_subject: dict[str, list[dict[str, Any]]] = {}
+                for event_id, event in event_payloads.items():
+                    digest = _content_hash(event)
+                    existing = existing_event_by_id.get(event_id)
+                    if existing is not None:
+                        if existing["content_sha256"] != digest:
+                            raise ConflictError(
+                                f"verification event {event_id} is immutable; create a new event"
+                            )
+                        written = False
+                    else:
+                        written = True
+                        new_events_by_subject.setdefault(event["subject"], []).append(event)
+
+                    for evidence_id in event.get("evidence", []):
+                        if evidence_id not in evidence_by_id:
+                            raise NotFoundError(evidence_id)
+
+                    event_actions.append(
+                        {
+                            "id": event_id,
+                            "written": written,
+                            "payload": event,
+                            "digest": digest,
+                        }
+                    )
+
+                for event in events:
+                    procedure_key = (
+                        event["procedure"]["id"],
+                        event["procedure"]["version"],
+                    )
+                    row = connection.execute(
+                        """
+                        SELECT 1
+                        FROM procedures
+                        WHERE procedure_id = ? AND version = ?
+                        """,
+                        procedure_key,
+                    ).fetchone()
+                    if row is None:
+                        raise NotFoundError(
+                            f"{procedure_key[0]}@{procedure_key[1]}"
+                        )
+
+                registry = self._load_registry(connection)
+                for subject in affected_subjects:
+                    candidate_events = list(existing_events_by_subject[subject])
+                    candidate_events.extend(
+                        StoredRecord(
+                            record=event,
+                            content_sha256=_content_hash(event),
+                            recorded_at=recorded,
+                        )
+                        for event in new_events_by_subject.get(subject, [])
+                    )
+                    resolve_claim_relationships(
+                        identity_state[subject],
+                        list(evidence_by_id.values()),
+                        [stored.record for stored in candidate_events],
+                        registry,
+                    )
+
+                for action in identity_actions:
+                    if not action["written"]:
+                        continue
+                    connection.execute(
+                        """
+                        INSERT INTO identity_revisions(
+                            nothing_id, revision, protocol_version, payload_json,
+                            content_sha256, recorded_at, recorded_by,
+                            previous_content_sha256
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            action["id"],
+                            action["revision"],
+                            action["payload"]["version"],
+                            _canonical_json(action["payload"]),
+                            action["digest"],
+                            recorded,
+                            actor,
+                            action["previous_hash"],
+                        ),
+                    )
+                    connection.execute(
+                        """
+                        INSERT INTO identity_heads(nothing_id, revision, content_sha256)
+                        VALUES (?, ?, ?)
+                        ON CONFLICT(nothing_id) DO UPDATE SET
+                            revision = excluded.revision,
+                            content_sha256 = excluded.content_sha256
+                        """,
+                        (
+                            action["id"],
+                            action["revision"],
+                            action["digest"],
+                        ),
+                    )
+                    connection.execute(
+                        """
+                        INSERT INTO audit_log(
+                            recorded_at, actor, action, record_type, record_id,
+                            revision, content_sha256, details_json
+                        ) VALUES (?, ?, 'APPEND', 'identity', ?, ?, ?, ?)
+                        """,
+                        (
+                            recorded,
+                            actor,
+                            action["id"],
+                            action["revision"],
+                            action["digest"],
+                            json.dumps(
+                                {
+                                    "protocol_version": action["payload"]["version"],
+                                    "ingestion_id": ingestion_id,
+                                    "idempotency_key": idempotency_key,
+                                },
+                                sort_keys=True,
+                                separators=(",", ":"),
+                            ),
+                        ),
+                    )
+
+                for action in evidence_actions:
+                    if not action["written"]:
+                        continue
+                    evidence = action["payload"]
+                    connection.execute(
+                        """
+                        INSERT INTO evidence(
+                            evidence_id, protocol_version, payload_json,
+                            content_sha256, recorded_at, recorded_by
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            action["id"],
+                            evidence["version"],
+                            _canonical_json(evidence),
+                            action["digest"],
+                            recorded,
+                            actor,
+                        ),
+                    )
+                    connection.execute(
+                        """
+                        INSERT INTO audit_log(
+                            recorded_at, actor, action, record_type, record_id,
+                            revision, content_sha256, details_json
+                        ) VALUES (?, ?, 'APPEND', 'evidence', ?, NULL, ?, ?)
+                        """,
+                        (
+                            recorded,
+                            actor,
+                            action["id"],
+                            action["digest"],
+                            json.dumps(
+                                {
+                                    "ingestion_id": ingestion_id,
+                                    "idempotency_key": idempotency_key,
+                                },
+                                sort_keys=True,
+                                separators=(",", ":"),
+                            ),
+                        ),
+                    )
+
+                for action in event_actions:
+                    if not action["written"]:
+                        continue
+                    event = action["payload"]
+                    connection.execute(
+                        """
+                        INSERT INTO verification_events(
+                            event_id, protocol_version, subject, claim_id, occurred_at,
+                            procedure_id, procedure_version, supersedes_event_id,
+                            payload_json, content_sha256, recorded_at, recorded_by
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            action["id"],
+                            event["version"],
+                            event["subject"],
+                            event["claim_id"],
+                            event["occurred_at"],
+                            event["procedure"]["id"],
+                            event["procedure"]["version"],
+                            event.get("supersedes"),
+                            _canonical_json(event),
+                            action["digest"],
+                            recorded,
+                            actor,
+                        ),
+                    )
+                    for evidence_id in event.get("evidence", []):
+                        connection.execute(
+                            """
+                            INSERT INTO event_evidence(event_id, evidence_id)
+                            VALUES (?, ?)
+                            """,
+                            (action["id"], evidence_id),
+                        )
+                    connection.execute(
+                        """
+                        INSERT INTO audit_log(
+                            recorded_at, actor, action, record_type, record_id,
+                            revision, content_sha256, details_json
+                        ) VALUES (?, ?, 'APPEND', 'verification_event', ?, NULL, ?, ?)
+                        """,
+                        (
+                            recorded,
+                            actor,
+                            action["id"],
+                            action["digest"],
+                            json.dumps(
+                                {
+                                    "subject": event["subject"],
+                                    "claim_id": event["claim_id"],
+                                    "ingestion_id": ingestion_id,
+                                    "idempotency_key": idempotency_key,
+                                },
+                                sort_keys=True,
+                                separators=(",", ":"),
+                            ),
+                        ),
+                    )
+
+                result_data = {
+                    "ingestion_id": ingestion_id,
+                    "accepted": True,
+                    "identities": [
+                        {
+                            "id": action["id"],
+                            "revision": action["revision"],
+                            "written": action["written"],
+                        }
+                        for action in identity_actions
+                    ],
+                    "evidence": [
+                        {
+                            "id": action["id"],
+                            "written": action["written"],
+                        }
+                        for action in evidence_actions
+                    ],
+                    "verification_events": [
+                        {
+                            "id": action["id"],
+                            "written": action["written"],
+                        }
+                        for action in event_actions
+                    ],
+                }
+
+                connection.execute(
+                    """
+                    INSERT INTO audit_log(
+                        recorded_at, actor, action, record_type, record_id,
+                        revision, content_sha256, details_json
+                    ) VALUES (?, ?, 'ACCEPT', 'ingestion', ?, NULL, ?, ?)
+                    """,
+                    (
+                        recorded,
+                        actor,
+                        ingestion_id,
+                        request_sha256,
+                        json.dumps(
+                            {
+                                "idempotency_key": idempotency_key,
+                                "identity_count": len(identity_actions),
+                                "evidence_count": len(evidence_actions),
+                                "verification_event_count": len(event_actions),
+                            },
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
+                    ),
+                )
+
+                connection.execute(
+                    """
+                    INSERT INTO ingestion_idempotency(
+                        actor, idempotency_key, request_sha256, ingestion_id,
+                        status_code, result_json, recorded_at
+                    ) VALUES (?, ?, ?, ?, 200, ?, ?)
+                    """,
+                    (
+                        actor,
+                        idempotency_key,
+                        request_sha256,
+                        ingestion_id,
+                        _canonical_json(result_data),
+                        recorded,
+                    ),
+                )
+
+                connection.execute("COMMIT")
+                return IngestionResult(
+                    data=result_data,
+                    recorded_at=recorded,
+                    replayed=False,
+                )
+            except Exception:
+                connection.execute("ROLLBACK")
+                raise
+
+
+    def get_identity_bundle(self, nothing_id: str) -> IdentityBundle:
+        ...
+
+    def get_evidence(self, evidence_id: str) -> StoredRecord:
+        ...
+
+    def get_event(self, event_id: str) -> StoredRecord:
+        ...
+
+    def get_procedure(self, procedure_id: str, version: str) -> StoredRecord:
+        ...
+
+    def ingest_bundle(
+        self,
+        bundle: Mapping[str, Any],
+        *,
+        actor: str,
+        idempotency_key: str,
+        request_sha256: str,
+        ingestion_id: str,
+        recorded_at: str | None = None,
+    ) -> IngestionResult:
+        ...
+
 
     def get_identity_bundle(self, nothing_id: str) -> IdentityBundle:
         with self._connect() as connection:
