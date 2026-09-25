@@ -49,13 +49,13 @@ The identity endpoint resolves Identity → Claim → Evidence → Verification 
 ## HTTP behavior
 
 Successful responses use `application/json`; errors use `application/problem+json`.
-The reference server implements ETag, If-None-Match, 304 Not Modified, Last-Modified, cache headers, Retry-After rate limiting, CORS for GET/OPTIONS, and explicit rejection of write methods.
+The reference server implements ETag, If-None-Match, 304 Not Modified, Last-Modified, cache headers and Retry-After rate limiting for reads, while write ingestion has a separate rate limit and does not enable wildcard CORS.
 
 ## Boundary
 
 The example dataset is synthetic. The reference server is not a production internet-facing service. The SQLite backend provides durable local/staging persistence, but it is not the intended multi-instance production database.
 
-Production deployment must preserve the same dependency direction: HTTP transport → resource representation → storage port → protocol resolver → data records. Production still requires TLS/gateway controls, authenticated ingestion for future writes, distributed rate limiting, observability, governed PostgreSQL-compatible persistence and security/privacy/legal review.
+Production deployment must preserve the same dependency direction: HTTP transport → resource representation → storage port → protocol resolver → data records. Production still requires TLS/gateway controls, distributed rate limiting, observability, governed PostgreSQL-compatible persistence and security/privacy/legal review.
 
 ## Tests
 
@@ -64,7 +64,7 @@ Production deployment must preserve the same dependency direction: HTTP transpor
 
 ## Production work still required
 
-The repository now defines the production persistence/deployment boundary and provides a durable SQLite reference implementation. Actual production use still requires PostgreSQL implementation, managed credentials, TLS/gateway controls, distributed abuse controls, structured observability, restore-tested backups, origin-specific CORS, authenticated write ingestion and a security/privacy/legal review.
+The repository now defines the production persistence/deployment boundary and provides a durable SQLite reference implementation. Actual production use still requires PostgreSQL implementation, managed credentials, TLS/gateway controls, distributed abuse controls, structured observability, restore-tested backups, origin-specific CORS and a security/privacy/legal review.
 
 ## Authenticated ingestion
 
