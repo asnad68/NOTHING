@@ -232,10 +232,14 @@ class PostgreSQLNothingStore:
         self._pool.close()
 
     def health(self) -> bool:
+        """Return readiness only when the database is reachable and schema is current."""
         try:
             with self._pool.connection() as connection:
-                connection.execute("SELECT 1").fetchone()
-            return True
+                row = connection.execute(
+                    "SELECT COALESCE(MAX(version), 0) AS version "
+                    "FROM schema_migrations"
+                ).fetchone()
+            return int(row["version"]) >= STORAGE_SCHEMA_VERSION
         except Exception:
             return False
 
