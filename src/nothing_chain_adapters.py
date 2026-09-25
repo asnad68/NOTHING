@@ -139,26 +139,6 @@ class EvmJsonRpcAdapter:
                 f"EVM transaction {tx_hash} has no mined block"
             )
 
-                asset_code=invoice.asset_code,
-                asset_kind=invoice.asset_kind,
-                destination=invoice.destination,
-                amount_atomic=0,
-                chain_event_key=chain_event_key(
-                    network=self.network,
-                    tx_hash=tx_hash,
-                    asset_kind=invoice.asset_kind,
-                    event_index=0 if invoice.asset_kind == "erc20" else None,
-                ),
-                tx_hash=tx_hash,
-                block_reference=receipt.get("blockHash"),
-                confirmation_count=0,
-                finality_status="confirmed" if block_number else "pending",
-                success=False,
-                observed_at=_utc_now(),
-                source="evm-json-rpc",
-                asset_contract=invoice.asset_contract,
-            )
-
         head = _hex_int(self._rpc.call("eth_blockNumber", []))
         confirmations = (
             max(0, head - block_number + 1)
