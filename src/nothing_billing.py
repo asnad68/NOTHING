@@ -114,9 +114,6 @@ class SubscriptionBillingService:
             raise PaymentValidationError("expires_at must include a timezone")
 
         expires_utc = expires_at.astimezone(timezone.utc)
-        now_utc = datetime.now(timezone.utc)
-        if expires_utc <= now_utc:
-            raise PaymentValidationError("expires_at must be in the future")
         if client_request_fingerprint is not None:
             if (
                 len(client_request_fingerprint) != 64
