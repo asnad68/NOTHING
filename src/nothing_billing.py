@@ -13,7 +13,7 @@ import secrets
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from typing import Any, Mapping
 
@@ -735,10 +735,7 @@ class SubscriptionBillingService:
         if previous and previous["expires_at"] is not None:
             starts_at = max(starts_at, previous["expires_at"])
 
-        expiry_dt = datetime.fromtimestamp(
-            starts_at.timestamp() + int(duration_seconds),
-            tz=timezone.utc,
-        )
+        expiry_dt = starts_at + timedelta(seconds=int(duration_seconds))
         entitlement_id = uuid.uuid4()
         connection.execute(
             """
