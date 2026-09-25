@@ -68,6 +68,19 @@ class ReferenceApiHttpTests(unittest.TestCase):
         self.assertEqual(payload["code"], "NOT_FOUND")
         self.assertEqual(payload["status"], 404)
 
+    def test_identity_verification_history_endpoint_returns_full_event_timeline(self) -> None:
+        response, body = self.request(
+            "/v1/identity/NTH-000001/verification-events"
+        )
+        self.assertEqual(response.status, 200)
+        self.assertTrue(response.getheader("ETag"))
+        payload = json.loads(body)
+        self.assertEqual(payload["data"]["nothing_id"], "NTH-000001")
+        self.assertEqual(
+            [event["id"] for event in payload["data"]["events"]],
+            ["VER-000001"],
+        )
+
     def test_evidence_event_and_procedure_endpoints(self) -> None:
         paths = (
             "/v1/evidence/EVD-000001",
