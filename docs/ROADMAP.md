@@ -79,9 +79,19 @@
 - [ ] Research BIMI and domain signals
 
 ## Phase 7 — Commercial Infrastructure
-- [ ] Define service tiers
+- [x] Define service tiers
+- [x] Define initial cryptocurrency billing/entitlement data model
+- [x] Define payment routing and duplicate-payment invariants
+- [x] Implement receive-only chain observation adapters
+- [x] Implement PostgreSQL payment allocation and entitlement activation boundary
+- [x] Implement authenticated customer billing API boundary
+- [x] Implement XRPL checkpointed payment worker
+- [x] Define payment reconciliation/audit requirements
 - [ ] Define governance
 - [ ] Define operational security requirements
+- [ ] Managed authentication/identity-provider production registration
+- [ ] Production infrastructure deployment and secret injection
+- [ ] Production backup/restore drill
 - [ ] Conduct legal/compliance review before launch
 
 Roadmap status: experimental and subject to change.
