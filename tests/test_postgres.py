@@ -368,6 +368,9 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
             observation=event,
             actor="billing-test",
         )
+        queue = service.list_unallocated_payments(limit=10)
+        self.assertEqual(len(queue), 1)
+        self.assertEqual(queue[0]["tx_hash"], event.tx_hash)
 
         with self.store._pool.connection() as connection:
             payment_event_id = connection.execute(
@@ -384,6 +387,7 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
             invoice_id=invoice.invoice_id,
             actor="manual-reviewer",
         )
+        self.assertEqual(service.list_unallocated_payments(limit=10), [])
         self.assertEqual(snapshot["status"], "paid")
         self.assertEqual(snapshot["received_atomic"], "5000")
         self.assertIsNotNone(snapshot["entitlement"])
