@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import os
+import uuid
 import threading
 import time
 from datetime import datetime
@@ -21,6 +22,13 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
+from src.nothing_ingestion import (
+    BearerAuthenticator,
+    IngestionRequestError,
+    INGESTION_MAX_BODY_BYTES,
+    INGESTION_MAX_RECORDS,
+    parse_ingestion_request,
+)
 from src.nothing_protocol import RelationshipError, resolve_claim_relationships
 from src.nothing_store import (
     FilesystemNothingStore,
@@ -49,6 +57,12 @@ RATE_LIMIT_MAX_REQUESTS = int(
         "NOTHING_RATE_LIMIT_MAX_REQUESTS",
         os.getenv("NOTHING_RATE_MAX_REQUESTS", "120"),
     )
+)
+INGESTION_RATE_LIMIT_WINDOW_SECONDS = int(
+    os.getenv("NOTHING_INGESTION_RATE_WINDOW_SECONDS", "60")
+)
+INGESTION_RATE_LIMIT_MAX_REQUESTS = int(
+    os.getenv("NOTHING_INGESTION_RATE_LIMIT_MAX_REQUESTS", "30")
 )
 
 
@@ -198,6 +212,10 @@ class RateLimiter:
 
 
 RATE_LIMITER = RateLimiter(RATE_LIMIT_WINDOW_SECONDS, RATE_LIMIT_MAX_REQUESTS)
+INGESTION_RATE_LIMITER = RateLimiter(
+    INGESTION_RATE_LIMIT_WINDOW_SECONDS,
+    INGESTION_RATE_LIMIT_MAX_REQUESTS,
+)
 
 
 class NothingHttpServer(ThreadingHTTPServer):
@@ -208,10 +226,12 @@ class NothingHttpServer(ThreadingHTTPServer):
         *,
         store: NothingStore,
         owns_store: bool,
+        ingestion_authenticator: BearerAuthenticator,
     ):
         super().__init__(server_address, handler_class)
         self.store = store
         self.owns_store = owns_store
+        self.ingestion_authenticator = ingestion_authenticator
 
     def server_close(self) -> None:
         super().server_close()
@@ -246,6 +266,7 @@ class NothingApiHandler(BaseHTTPRequestHandler):
         last_modified: str | None = None,
         allow_cache: bool = True,
         retry_after: int | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> None:
         body = b"" if payload is None else _json_bytes(payload)
         self.send_response(status)
@@ -266,6 +287,8 @@ class NothingApiHandler(BaseHTTPRequestHandler):
             self.send_header("Last-Modified", last_modified)
         if retry_after is not None:
             self.send_header("Retry-After", str(retry_after))
+        for header_name, header_value in (extra_headers or {}).items():
+            self.send_header(header_name, header_value)
         self.end_headers()
         if body:
             self.wfile.write(body)
@@ -295,6 +318,19 @@ class NothingApiHandler(BaseHTTPRequestHandler):
             return False
         return True
 
+    def _check_ingestion_rate_limit(self) -> bool:
+        if not INGESTION_RATE_LIMITER.allow(
+            f"ingestion:{self._client_key()}"
+        ):
+            self._send_problem(
+                429,
+                "RATE_LIMITED",
+                "Too many write-ingestion requests.",
+                retry_after=INGESTION_RATE_LIMIT_WINDOW_SECONDS,
+            )
+            return False
+        return True
+
     def _method_not_allowed(self) -> None:
         self.send_response(405)
         self.send_header("Allow", "GET, OPTIONS")
@@ -303,6 +339,13 @@ class NothingApiHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self) -> None:
+        parsed = urlparse(self.path)
+        path = parsed.path.rstrip("/") or "/"
+        if path == "/v1/ingestion/bundles":
+            if not self._check_ingestion_rate_limit():
+                return
+            self._post_ingestion_bundle()
+            return
         self._method_not_allowed()
 
     def do_PUT(self) -> None:
@@ -315,6 +358,20 @@ class NothingApiHandler(BaseHTTPRequestHandler):
         self._method_not_allowed()
 
     def do_OPTIONS(self) -> None:
+        parsed = urlparse(self.path)
+        path = parsed.path.rstrip("/") or "/"
+        if path == "/v1/ingestion/bundles":
+            self.send_response(204)
+            self.send_header("Allow", "POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+            self.send_header(
+                "Access-Control-Allow-Headers",
+                "Authorization, Content-Type, Idempotency-Key",
+            )
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+
         self.send_response(204)
         self.send_header("Allow", "GET, OPTIONS")
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -325,6 +382,157 @@ class NothingApiHandler(BaseHTTPRequestHandler):
         )
         self.send_header("Content-Length", "0")
         self.end_headers()
+
+
+    def _post_ingestion_bundle(self) -> None:
+        if not self.ingestion_authenticator.configured:
+            self._send_problem(
+                503,
+                "WRITE_INGESTION_UNAVAILABLE",
+                "Authenticated write ingestion is not configured.",
+            )
+            return
+
+        if not self.ingestion_authenticator.authenticate(
+            self.headers.get("Authorization")
+        ):
+            self._send_problem(
+                401,
+                "UNAUTHORIZED",
+                "A valid bearer credential is required for write ingestion.",
+                extra_headers={
+                    "WWW-Authenticate": 'Bearer realm="NOTHING ingestion"',
+                },
+            )
+            return
+
+        content_length = self.headers.get("Content-Length")
+        if content_length is None:
+            self._send_problem(
+                400,
+                "CONTENT_LENGTH_REQUIRED",
+                "Content-Length is required for write ingestion.",
+            )
+            return
+
+        try:
+            length = int(content_length)
+        except ValueError:
+            self._send_problem(
+                400,
+                "INVALID_CONTENT_LENGTH",
+                "Content-Length must be a non-negative integer.",
+            )
+            return
+
+        if length < 0:
+            self._send_problem(
+                400,
+                "INVALID_CONTENT_LENGTH",
+                "Content-Length must be a non-negative integer.",
+            )
+            return
+
+        if length > INGESTION_MAX_BODY_BYTES:
+            self._send_problem(
+                413,
+                "PAYLOAD_TOO_LARGE",
+                "The ingestion request body exceeds the configured size limit.",
+            )
+            return
+
+        body = self.rfile.read(length)
+        if len(body) != length:
+            self._send_problem(
+                400,
+                "INCOMPLETE_REQUEST",
+                "The request body ended before Content-Length was satisfied.",
+            )
+            return
+
+        try:
+            parsed = parse_ingestion_request(
+                body,
+                content_type=self.headers.get("Content-Type"),
+                idempotency_key=self.headers.get("Idempotency-Key"),
+                max_body_bytes=INGESTION_MAX_BODY_BYTES,
+                max_records=INGESTION_MAX_RECORDS,
+            )
+        except IngestionRequestError as exc:
+            message = str(exc)
+            if message == "Idempotency-Key header is required":
+                code = "IDEMPOTENCY_KEY_REQUIRED"
+                status = 400
+            elif message.startswith("Idempotency-Key"):
+                code = "IDEMPOTENCY_KEY_INVALID"
+                status = 400
+            elif message == "Content-Type must be application/json":
+                code = "UNSUPPORTED_MEDIA_TYPE"
+                status = 415
+            elif "body exceeds" in message:
+                code = "PAYLOAD_TOO_LARGE"
+                status = 413
+            else:
+                code = "INVALID_INGESTION_REQUEST"
+                status = 400
+            self._send_problem(status, code, message)
+            return
+
+        idempotency_key = self.headers.get("Idempotency-Key") or ""
+        ingestion_id = str(uuid.uuid4())
+
+        try:
+            result = self.store.ingest_bundle(
+                parsed.bundle,
+                actor=self.ingestion_authenticator.actor,
+                idempotency_key=idempotency_key,
+                request_sha256=parsed.request_sha256,
+                ingestion_id=ingestion_id,
+            )
+        except ConflictError as exc:
+            self._send_problem(409, "CONFLICT", str(exc))
+            return
+        except (ValidationError, RelationshipError) as exc:
+            self._send_problem(
+                422,
+                "INVALID_INGESTION_BUNDLE",
+                str(exc),
+            )
+            return
+        except NotFoundError:
+            self._send_problem(
+                422,
+                "INVALID_INGESTION_BUNDLE",
+                "The ingestion bundle references a record that does not exist.",
+            )
+            return
+        except StoreError:
+            self._send_problem(
+                503,
+                "WRITE_INGESTION_UNAVAILABLE",
+                "The ingestion persistence service is temporarily unavailable.",
+            )
+            return
+
+        payload = {
+            "data": result.data,
+            "meta": _meta(
+                demo=self.store.demo,
+                generated_at=result.recorded_at,
+            ),
+        }
+        extra_headers = {
+            "X-NOTHING-Ingestion-ID": result.data["ingestion_id"],
+        }
+        if result.replayed:
+            extra_headers["Idempotent-Replay"] = "true"
+
+        self._send(
+            200,
+            payload,
+            allow_cache=False,
+            extra_headers=extra_headers,
+        )
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
@@ -566,6 +774,8 @@ def build_server(
     storage_backend: str | None = None,
     data_root: str | Path | None = None,
     db_path: str | Path | None = None,
+    ingestion_token: str | None = None,
+    ingestion_actor: str | None = None,
 ) -> NothingHttpServer:
     owns_store = store is None
     if store is None:
@@ -585,6 +795,10 @@ def build_server(
         NothingApiHandler,
         store=store,
         owns_store=owns_store,
+        ingestion_authenticator=BearerAuthenticator(
+            ingestion_token,
+            actor=ingestion_actor,
+        ),
     )
 
 
