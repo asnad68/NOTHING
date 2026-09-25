@@ -12,6 +12,7 @@ import json
 import os
 import time
 from contextlib import contextmanager
+from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Sequence
 
@@ -57,6 +58,28 @@ DEFAULT_RETRY_BACKOFF_SECONDS = 0.05
 
 class PostgreSQLNotConfiguredError(StoreError):
     """Raised when the PostgreSQL driver or DSN is missing."""
+
+
+
+def _retry_serializable_method(function: Callable[..., Any]) -> Callable[..., Any]:
+    @wraps(function)
+    def wrapper(self: "PostgreSQLNothingStore", *args: Any, **kwargs: Any) -> Any:
+        retries = self._serialization_retries
+        for attempt in range(retries + 1):
+            try:
+                return function(self, *args, **kwargs)
+            except (
+                self._SerializationFailure,
+                self._DeadlockDetected,
+            ):
+                if attempt >= retries:
+                    raise
+                delay = self._retry_backoff_seconds * (2**attempt)
+                if delay:
+                    time.sleep(delay)
+        raise AssertionError("unreachable")
+
+    return wrapper
 
 
 class PostgreSQLNothingStore:
@@ -242,32 +265,23 @@ class PostgreSQLNothingStore:
         *,
         retryable: bool,
     ) -> Iterator[Any]:
-        attempts = self._serialization_retries if retryable else 0
-        for attempt in range(attempts + 1):
-            try:
-                with self._pool.connection() as connection:
-                    with connection.transaction():
-                        if self._statement_timeout_ms:
-                            connection.execute(
-                                "SET LOCAL statement_timeout = %s",
-                                (self._statement_timeout_ms,),
-                            )
-                        if self._lock_timeout_ms:
-                            connection.execute(
-                                "SET LOCAL lock_timeout = %s",
-                                (self._lock_timeout_ms,),
-                            )
-                        connection.execute(
-                            "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE"
-                        )
-                        yield connection
-                return
-            except (self._SerializationFailure, self._DeadlockDetected):
-                if attempt >= attempts:
-                    raise
-                sleep_for = self._retry_backoff_seconds * (2**attempt)
-                if sleep_for:
-                    time.sleep(sleep_for)
+        del retryable
+        with self._pool.connection() as connection:
+            with connection.transaction():
+                if self._statement_timeout_ms:
+                    connection.execute(
+                        "SET LOCAL statement_timeout = %s",
+                        (self._statement_timeout_ms,),
+                    )
+                if self._lock_timeout_ms:
+                    connection.execute(
+                        "SET LOCAL lock_timeout = %s",
+                        (self._lock_timeout_ms,),
+                    )
+                connection.execute(
+                    "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE"
+                )
+                yield connection
 
     @staticmethod
     def _stored_identity(row: Mapping[str, Any]) -> StoredRecord:
@@ -459,6 +473,7 @@ class PostgreSQLNothingStore:
             raise NotFoundError(f"{procedure_id}@{version}")
         return self._stored_procedure(row)
 
+    @_retry_serializable_method
     def put_identity(
         self,
         identity: Mapping[str, Any],
@@ -547,6 +562,7 @@ class PostgreSQLNothingStore:
             )
             return revision
 
+    @_retry_serializable_method
     def put_evidence(
         self,
         evidence: Mapping[str, Any],
@@ -610,6 +626,7 @@ class PostgreSQLNothingStore:
             )
             return True
 
+    @_retry_serializable_method
     def put_procedure(
         self,
         procedure: Mapping[str, Any],
@@ -679,6 +696,7 @@ class PostgreSQLNothingStore:
             )
             return True
 
+    @_retry_serializable_method
     def put_event(
         self,
         event: Mapping[str, Any],
@@ -1009,6 +1027,7 @@ class PostgreSQLNothingStore:
             ),
         )
 
+    @_retry_serializable_method
     def ingest_bundle(
         self,
         bundle: Mapping[str, Any],
