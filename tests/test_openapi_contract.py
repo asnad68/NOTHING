@@ -126,6 +126,16 @@ class OpenApiContractTests(unittest.TestCase):
             "#/components/schemas/VerificationEventHistoryResponse",
         )
 
+    def test_billing_invoice_schema_hides_internal_customer_reference(self) -> None:
+        schema = self.spec["components"]["schemas"]["BillingInvoiceView"]
+        self.assertNotIn("customer_ref", schema["required"])
+        self.assertNotIn("customer_ref", schema["properties"])
+        self.assertIn("duration_seconds", schema["required"])
+        self.assertEqual(
+            schema["properties"]["duration_seconds"]["type"],
+            "integer",
+        )
+
     def test_billing_contract_is_customer_scoped_and_authenticated(self) -> None:
         paths = self.spec["paths"]
 
