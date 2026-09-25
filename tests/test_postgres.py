@@ -29,6 +29,7 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
             lock_timeout_ms=5000,
             serialization_retries=5,
             retry_backoff_seconds=0.01,
+            auto_migrate=True,
         )
         self.store.import_json_bundle(ROOT, actor="postgres-integration")
 
