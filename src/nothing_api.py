@@ -493,7 +493,11 @@ class NothingApiHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return
 
-        if path == "/v1/billing/entitlements" or path.startswith("/v1/billing/invoices/"):
+        if (
+            path == "/v1/billing/prices"
+            or path == "/v1/billing/entitlements"
+            or path.startswith("/v1/billing/invoices/")
+        ):
             self.send_response(204)
             self.send_header("Allow", "GET, OPTIONS")
             self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
