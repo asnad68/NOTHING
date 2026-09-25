@@ -71,6 +71,51 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
             "verification_events": [event],
         }
 
+    def test_payment_role_has_only_required_billing_privileges(self):
+        with self.store._pool.connection() as connection:
+            allowed = connection.execute(
+                """
+                SELECT
+                  has_table_privilege(
+                    'nothing_payment',
+                    'payment_events',
+                    'SELECT,INSERT,UPDATE'
+                  ) AS payment_events,
+                  has_table_privilege(
+                    'nothing_payment',
+                    'billing_invoices',
+                    'SELECT,UPDATE'
+                  ) AS billing_invoices,
+                  has_table_privilege(
+                    'nothing_payment',
+                    'payment_allocations',
+                    'SELECT,INSERT'
+                  ) AS payment_allocations,
+                  has_table_privilege(
+                    'nothing_payment',
+                    'subscription_entitlements',
+                    'SELECT,INSERT'
+                  ) AS entitlements,
+                  has_table_privilege(
+                    'nothing_payment',
+                    'payment_worker_checkpoints',
+                    'SELECT,INSERT,UPDATE'
+                  ) AS checkpoints,
+                  has_table_privilege(
+                    'nothing_payment',
+                    'identity_heads',
+                    'UPDATE'
+                  ) AS identity_heads_update
+                """
+            ).fetchone()
+
+        self.assertTrue(allowed["payment_events"])
+        self.assertTrue(allowed["billing_invoices"])
+        self.assertTrue(allowed["payment_allocations"])
+        self.assertTrue(allowed["entitlements"])
+        self.assertTrue(allowed["checkpoints"])
+        self.assertFalse(allowed["identity_heads_update"])
+
     def test_migrations_and_basic_reads(self):
         with self.store._pool.connection() as connection:
             row = connection.execute(
