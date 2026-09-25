@@ -60,4 +60,6 @@ Optional authentication controls:
 
 The PostgreSQL adapter uses a bounded connection pool and serializable write transactions with deterministic advisory locking and whole-operation retry on serialization failure/deadlock.
 
+Production deployment uses the OCI image in `Dockerfile` and the hardened Kubernetes baseline under `deploy/kubernetes/`. Runtime pods do not run schema migrations; migrations are executed separately with the `nothing_migrator` database identity. The current v0.1 deployment boundary is explicitly single-tenant.
+
 Proxy headers: `X-Forwarded-For` is ignored by default. Set `NOTHING_TRUST_PROXY_HEADERS=true` only when a trusted gateway overwrites that header and the network boundary prevents direct client access to the application.
