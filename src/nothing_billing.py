@@ -192,6 +192,7 @@ class SubscriptionBillingService:
             price = connection.execute(
                 """
                 SELECT p.plan_code, p.status AS plan_status,
+                       p.duration_seconds,
                        bp.price_id, bp.asset_code, bp.network,
                        bp.asset_kind, bp.asset_contract,
                        bp.amount_atomic, bp.asset_decimals,
@@ -263,6 +264,7 @@ class SubscriptionBillingService:
                 "asset_contract": price["asset_contract"],
                 "amount_atomic": str(price["amount_atomic"]),
                 "asset_decimals": int(price["asset_decimals"]),
+                "duration_seconds": int(price["duration_seconds"]),
                 "destination": effective_destination,
                 "expires_at": expires_utc.isoformat(),
                 "routing_mode": effective_routing_mode,
@@ -277,6 +279,7 @@ class SubscriptionBillingService:
                     asset_code, network, asset_kind, asset_contract,
                     amount_atomic, asset_decimals, destination,
                     routing_mode, routing_reference,
+                    plan_duration_seconds,
                     status, client_idempotency_key, expires_at,
                     quote_json
                 ) VALUES (
@@ -298,6 +301,7 @@ class SubscriptionBillingService:
                     effective_destination,
                     effective_routing_mode,
                     effective_routing_reference,
+                    price["duration_seconds"],
                     client_idempotency_key,
                     expires_utc,
                     _canonical_json(quote),
@@ -678,6 +682,7 @@ class SubscriptionBillingService:
                 now=now,
                 actor=actor,
                 excess_atomic=excess,
+                duration_seconds=int(invoice["plan_duration_seconds"]),
             )
 
             return self._settlement_snapshot(connection, invoice_id)
@@ -691,6 +696,7 @@ class SubscriptionBillingService:
         now: datetime,
         actor: str,
         excess_atomic: int,
+        duration_seconds: int,
     ) -> str | None:
         entitlement = connection.execute(
             """
@@ -711,19 +717,8 @@ class SubscriptionBillingService:
                 f"{invoice_model.plan_code}"
             ],
         )
-        plan = connection.execute(
-            """
-            SELECT duration_seconds
-            FROM subscription_plans
-            WHERE plan_code = %s
-            FOR SHARE
-            """,
-            (invoice_model.plan_code,),
-        ).fetchone()
-        if plan is None:
-            raise NotFoundError(
-                f"subscription plan {invoice_model.plan_code} does not exist"
-            )
+        if duration_seconds <= 0:
+            raise PaymentValidationError("invoice duration snapshot must be positive")
 
         previous = connection.execute(
             """
@@ -741,7 +736,7 @@ class SubscriptionBillingService:
             starts_at = max(starts_at, previous["expires_at"])
 
         expiry_dt = datetime.fromtimestamp(
-            starts_at.timestamp() + int(plan["duration_seconds"]),
+            starts_at.timestamp() + int(duration_seconds),
             tz=timezone.utc,
         )
         entitlement_id = uuid.uuid4()
@@ -1004,7 +999,7 @@ class SubscriptionBillingService:
             """
             SELECT invoice_id, customer_ref, plan_code, asset_code, network,
                    asset_kind, asset_contract, amount_atomic,
-                   asset_decimals, destination, routing_mode,
+                   asset_decimals, plan_duration_seconds, destination, routing_mode,
                    routing_reference, status, expires_at, paid_at
             FROM billing_invoices
             WHERE invoice_id = %s
@@ -1044,6 +1039,7 @@ class SubscriptionBillingService:
             "asset_contract": invoice["asset_contract"],
             "amount_atomic": str(invoice["amount_atomic"]),
             "asset_decimals": int(invoice["asset_decimals"]),
+            "duration_seconds": int(invoice["plan_duration_seconds"]),
             "destination": invoice["destination"],
             "routing_mode": invoice["routing_mode"],
             "routing_reference": invoice["routing_reference"],
@@ -1296,6 +1292,7 @@ class SubscriptionBillingService:
                 now=now,
                 actor=actor,
                 excess_atomic=excess,
+                duration_seconds=int(invoice["plan_duration_seconds"]),
             )
             return self._settlement_snapshot(connection, invoice_id)
 
