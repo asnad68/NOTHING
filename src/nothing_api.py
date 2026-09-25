@@ -74,6 +74,7 @@ TRUST_PROXY_HEADERS = os.getenv(
     "NOTHING_TRUST_PROXY_HEADERS",
     "false",
 ).lower() in {"1", "true", "yes"}
+TENANCY_MODE = os.getenv("NOTHING_TENANCY_MODE", "single-tenant").strip().lower()
 
 
 def _repo_root() -> Path:
@@ -816,6 +817,11 @@ def build_server(
 ) -> NothingHttpServer:
     owns_store = store is None
     selected_backend = storage_backend or DEFAULT_BACKEND
+    if TENANCY_MODE != "single-tenant":
+        raise AuthConfigurationError(
+            "multi-tenant deployment is not supported by the v0.1 data model; "
+            "use NOTHING_TENANCY_MODE=single-tenant"
+        )
     selected_auth_mode = (
         auth_mode
         or os.getenv("NOTHING_AUTH_MODE")
