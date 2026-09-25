@@ -48,6 +48,7 @@ class BearerAuthenticator:
         token: str | None = None,
         *,
         actor: str | None = None,
+        scope: str = DEFAULT_STATIC_SCOPE,
     ) -> None:
         self.token = token if token is not None else os.getenv("NOTHING_INGESTION_TOKEN")
         self.actor = (
@@ -55,6 +56,9 @@ class BearerAuthenticator:
             if actor is not None
             else os.getenv("NOTHING_INGESTION_ACTOR", "authenticated-ingestion")
         )
+        self.scope = scope.strip()
+        if not self.scope:
+            raise ValueError("scope must be non-empty")
 
     @property
     def configured(self) -> bool:
@@ -83,7 +87,7 @@ class BearerAuthenticator:
             subject=self.actor,
             issuer="urn:nothing:static-bearer",
             client_id=self.actor,
-            scopes=frozenset({DEFAULT_STATIC_SCOPE}),
+            scopes=frozenset({self.scope}),
             claims={},
         )
 
@@ -92,7 +96,7 @@ class BearerAuthenticator:
         principal: AuthenticatedPrincipal,
         action: str,
     ) -> bool:
-        return action == DEFAULT_STATIC_SCOPE
+        return action == self.scope
 
 
 def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
