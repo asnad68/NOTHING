@@ -72,6 +72,87 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
             "verification_events": [event],
         }
 
+    def test_invoice_duration_is_snapshotted_at_creation(self):
+        plan_code = "duration-snapshot-" + uuid.uuid4().hex[:12]
+        price_id = str(uuid.uuid4())
+        destination = "0x4444444444444444444444444444444444444444"
+        self._insert_payment_plan(
+            plan_code=plan_code,
+            price_id=price_id,
+            asset_code="ETH",
+            network="ethereum",
+            asset_kind="native",
+            amount_atomic=1_000,
+            asset_decimals=18,
+            destination=destination,
+            routing_mode="unique_destination",
+        )
+        service = SubscriptionBillingService(
+            self.store,
+            policies={"ethereum": ConfirmationPolicy(
+                required_confirmations=0,
+                require_finality=True,
+            )},
+        )
+        with self.store._transaction(retryable=True) as connection:
+            connection.execute(
+                "UPDATE subscription_plans SET duration_seconds = 7200 "
+                "WHERE plan_code = %s",
+                (plan_code,),
+            )
+        invoice = service.create_invoice(
+            customer_ref="duration-customer",
+            plan_code=plan_code,
+            price_id=price_id,
+            client_idempotency_key="duration-snapshot-key",
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
+            actor="billing-test",
+            settlement_destination="0x0000000000000000000000000000000000000001",
+            settlement_routing_mode="unique_destination",
+        )
+        # The price/plan is now changed again, but the purchased term is frozen.
+        with self.store._transaction(retryable=True) as connection:
+            connection.execute(
+                "UPDATE subscription_plans SET duration_seconds = 10800 "
+                "WHERE plan_code = %s",
+                (plan_code,),
+            )
+        observation = PaymentObservation(
+            network="ethereum",
+            asset_code="ETH",
+            asset_kind="native",
+            destination=invoice.destination,
+            amount_atomic=1_000,
+            chain_event_key=chain_event_key(
+                network="ethereum",
+                tx_hash="0xduration-snapshot",
+                asset_kind="native",
+            ),
+            tx_hash="0xduration-snapshot",
+            block_reference="finalized",
+            confirmation_count=10,
+            finality_status="final",
+            success=True,
+            observed_at=datetime.now(timezone.utc),
+            source="trusted-test-indexer",
+            routing_mode="unique_destination",
+            routing_reference=None,
+        )
+        snapshot = service.settle_observation(
+            invoice_id=invoice.invoice_id,
+            observation=observation,
+            actor="trusted-test-indexer",
+        )
+        self.assertEqual(
+            int(
+                (
+                    snapshot["entitlement"]["expires_at"]
+                    - snapshot["entitlement"]["starts_at"]
+                ).total_seconds()
+            ),
+            7200,
+        )
+
     def test_payment_worker_checkpoint_cannot_move_backwards(self):
         worker = "checkpoint-test"
         account = "r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2"
@@ -141,7 +222,7 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
         with self.store._pool.connection() as connection:
             connection.execute(
                 "DELETE FROM schema_migrations WHERE version = %s",
-                (9,),
+                (10,),
             )
         try:
             self.assertFalse(self.store.health())
@@ -159,7 +240,7 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
             row = connection.execute(
                 "SELECT MAX(version) AS version FROM schema_migrations"
             ).fetchone()
-        self.assertEqual(row["version"], 9)
+        self.assertEqual(row["version"], 10)
 
         identity = self.store.get_identity("NTH-000001")
         self.assertEqual(identity.record["nothing_id"], "NTH-000001")
