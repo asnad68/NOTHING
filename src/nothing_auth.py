@@ -133,7 +133,11 @@ class OIDCJwtAuthenticator:
         return True
 
     @classmethod
-    def from_environment(cls) -> "OIDCJwtAuthenticator":
+    def from_environment(
+        cls,
+        *,
+        required_scope: str | None = None,
+    ) -> "OIDCJwtAuthenticator":
         issuer = os.getenv("NOTHING_AUTH_ISSUER", "").strip()
         audience = os.getenv("NOTHING_AUTH_AUDIENCE", "").strip()
         jwks_uri = os.getenv("NOTHING_AUTH_JWKS_URI", "").strip()
@@ -152,10 +156,14 @@ class OIDCJwtAuthenticator:
             audience=audience,
             jwks_uri=jwks_uri,
             allowed_algorithms=algorithms,
-            required_scope=os.getenv(
-                "NOTHING_AUTH_REQUIRED_SCOPE",
-                DEFAULT_REQUIRED_SCOPE,
-            ).strip(),
+            required_scope=(
+                required_scope
+                if required_scope is not None
+                else os.getenv(
+                    "NOTHING_AUTH_REQUIRED_SCOPE",
+                    DEFAULT_REQUIRED_SCOPE,
+                ).strip()
+            ),
             clock_skew_seconds=int(
                 os.getenv(
                     "NOTHING_AUTH_CLOCK_SKEW_SECONDS",
@@ -260,6 +268,4 @@ class OIDCJwtAuthenticator:
         principal: AuthenticatedPrincipal,
         action: str,
     ) -> bool:
-        if action == "nothing:ingest":
-            return self.required_scope in principal.scopes
-        return False
+        return action == self.required_scope and action in principal.scopes
