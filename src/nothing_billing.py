@@ -777,7 +777,6 @@ class SubscriptionBillingService:
         return str(entitlement_id)
 
     @_retry_billing_transaction
-    @_retry_billing_transaction
     def expire_entitlements(
         self,
         *,
@@ -830,6 +829,7 @@ class SubscriptionBillingService:
                 )
             return len(rows)
 
+    @_retry_billing_transaction
     def expire_invoices(
         self,
         *,
