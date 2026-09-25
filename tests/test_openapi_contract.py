@@ -140,6 +140,13 @@ class OpenApiContractTests(unittest.TestCase):
             "#/components/schemas/BillingInvoiceResponse",
         )
 
+        prices = paths["/v1/billing/prices"]["get"]
+        self.assertEqual(prices["security"], [{"BearerAuth": []}])
+        self.assertEqual(
+            prices["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/BillingPriceListResponse",
+        )
+
         entitlements = paths["/v1/billing/entitlements"]["get"]
         self.assertEqual(entitlements["security"], [{"BearerAuth": []}])
         self.assertEqual(
