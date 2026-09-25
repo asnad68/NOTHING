@@ -1946,6 +1946,7 @@
         "required": [
           "invoice_id",
           "plan_code",
+          "duration_seconds",
           "asset_code",
           "network",
           "asset_kind",
