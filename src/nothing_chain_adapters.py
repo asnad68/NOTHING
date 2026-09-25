@@ -502,6 +502,11 @@ class XrplJsonRpcAdapter:
                 break
             marker = page_marker
 
+        if not reached_checkpoint and marker is not None:
+            raise ChainAdapterError(
+                "XRPL discovery page limit reached before a durable checkpoint boundary"
+            )
+
         if stop_after_tx_hash and not reached_checkpoint:
             raise ChainAdapterError(
                 "XRPL worker checkpoint was not found within the configured page window"
