@@ -216,7 +216,7 @@ class AuthenticatedWriteIngestionTests(unittest.TestCase):
         self.assertEqual(response.status, 401)
         self.assertEqual(
             response.getheader("WWW-Authenticate"),
-            'Bearer realm="NOTHING ingestion"',
+            'Bearer realm="NOTHING ingestion", error="invalid_token"',
         )
         self.assertEqual(json.loads(payload)["code"], "UNAUTHORIZED")
 
