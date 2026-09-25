@@ -3,7 +3,7 @@
 ## Purpose
 
 The reference server is the first executable implementation of the API contract in `api/openapi.json`.
-It uses only the Python standard library and delegates cross-record verification semantics to `src/nothing_protocol.py`.
+It uses only the Python standard library, delegates cross-record verification semantics to `src/nothing_protocol.py`, and can consume either the demo filesystem backend or the durable SQLite reference backend.
 
 ## Start locally
 
@@ -17,6 +17,13 @@ Custom host/port:
 
 ```bash
 python -m src.nothing_api --host 127.0.0.1 --port 8080
+
+SQLite-backed local/staging mode:
+
+```bash
+python -m src.nothing_store --db-path data/nothing.db --import-root .
+python -m src.nothing_api --storage-backend sqlite --db-path data/nothing.db
+```
 ```
 
 Environment variables supported by the reference implementation:
@@ -29,6 +36,8 @@ GET /v1/identity/{nothing_id}
 GET /v1/evidence/{evidence_id}
 GET /v1/verification-events/{event_id}
 GET /v1/procedures/{procedure_id}/{version}
+GET /healthz
+GET /readyz
 ```
 
 ## Resolution path
@@ -44,9 +53,9 @@ The reference server implements ETag, If-None-Match, 304 Not Modified, Last-Modi
 
 ## Boundary
 
-The current dataset is synthetic. The reference server is not a production internet-facing service and does not provide TLS termination, authentication, persistent storage or distributed rate limiting.
+The example dataset is synthetic. The reference server is not a production internet-facing service. The SQLite backend provides durable local/staging persistence, but it is not the intended multi-instance production database.
 
-Production deployment must preserve the same dependency direction: HTTP transport → resource representation → protocol resolver → data records.
+Production deployment must preserve the same dependency direction: HTTP transport → resource representation → storage port → protocol resolver → data records. Production still requires TLS/gateway controls, authenticated ingestion for future writes, distributed rate limiting, observability, governed PostgreSQL-compatible persistence and security/privacy/legal review.
 
 ## Tests
 
@@ -55,4 +64,4 @@ Production deployment must preserve the same dependency direction: HTTP transpor
 
 ## Production work still required
 
-Production use still requires TLS, governed persistent storage, stronger rate limiting, structured observability, audit controls, origin-specific CORS, and a security/privacy/legal review.
+The repository now defines the production persistence/deployment boundary and provides a durable SQLite reference implementation. Actual production use still requires PostgreSQL implementation, managed credentials, TLS/gateway controls, distributed abuse controls, structured observability, restore-tested backups, origin-specific CORS, authenticated write ingestion and a security/privacy/legal review.
