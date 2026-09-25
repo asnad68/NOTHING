@@ -32,4 +32,7 @@ EXPOSE 8080
 
 STOPSIGNAL SIGTERM
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8080/readyz\", timeout=4)"
+
 CMD ["python", "-m", "src.nothing_api", "--host", "0.0.0.0", "--port", "8080", "--storage-backend", "postgres", "--auth-mode", "oidc-jwt"]
