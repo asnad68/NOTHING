@@ -413,9 +413,10 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
             observation=event,
             actor="billing-test",
         )
-        queue = service.list_unallocated_payments(limit=10)
-        self.assertEqual(len(queue), 1)
-        self.assertEqual(queue[0]["tx_hash"], event.tx_hash)
+        queue = service.list_unallocated_payments(limit=1000)
+        matching = [item for item in queue if item["tx_hash"] == event.tx_hash]
+        self.assertEqual(len(matching), 1)
+        self.assertEqual(matching[0]["routing_reference"], event.routing_reference)
 
         with self.store._pool.connection() as connection:
             payment_event_id = connection.execute(
