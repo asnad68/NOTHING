@@ -110,6 +110,22 @@ class OpenApiContractTests(unittest.TestCase):
 
 
 
+    def test_identity_verification_history_contract(self) -> None:
+        path = self.spec["paths"]["/v1/identity/{nothing_id}/verification-events"]["get"]
+        self.assertEqual(path["security"], [])
+        self.assertEqual(
+            self.resolve_ref(path["parameters"][0])["name"],
+            "nothing_id",
+        )
+        self.assertEqual(
+            self.resolve_ref(path["parameters"][1])["name"],
+            "If-None-Match",
+        )
+        self.assertEqual(
+            path["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/VerificationEventHistoryResponse",
+        )
+
     def test_billing_contract_is_customer_scoped_and_authenticated(self) -> None:
         paths = self.spec["paths"]
 
