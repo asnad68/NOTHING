@@ -809,6 +809,16 @@ def build_server(
 ) -> NothingHttpServer:
     owns_store = store is None
     selected_backend = storage_backend or DEFAULT_BACKEND
+    selected_auth_mode = (
+        auth_mode
+        or os.getenv("NOTHING_AUTH_MODE")
+        or ("oidc-jwt" if selected_backend == "postgres" else "static-bearer")
+    )
+    if selected_backend == "postgres" and selected_auth_mode != "oidc-jwt":
+        raise AuthConfigurationError(
+            "the PostgreSQL production backend requires NOTHING_AUTH_MODE=oidc-jwt"
+        )
+
     if store is None:
         if selected_backend == "sqlite":
             store = SQLiteNothingStore(
@@ -823,16 +833,6 @@ def build_server(
             store = FilesystemNothingStore(data_root or _repo_root())
         else:
             raise ValueError(f"unsupported storage backend: {selected_backend}")
-
-    selected_auth_mode = (
-        auth_mode
-        or os.getenv("NOTHING_AUTH_MODE")
-        or ("oidc-jwt" if selected_backend == "postgres" else "static-bearer")
-    )
-    if selected_backend == "postgres" and selected_auth_mode != "oidc-jwt":
-        raise AuthConfigurationError(
-            "the PostgreSQL production backend requires NOTHING_AUTH_MODE=oidc-jwt"
-        )
 
     if selected_auth_mode == "oidc-jwt":
         ingestion_authenticator = OIDCJwtAuthenticator.from_environment()
