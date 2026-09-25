@@ -86,6 +86,9 @@
 - [x] Implement PostgreSQL payment allocation and entitlement activation boundary
 - [x] Implement authenticated customer billing API boundary
 - [x] Implement XRPL checkpointed payment worker
+- [x] Implement authenticated billing price catalog/invoice/entitlement reads
+- [x] Implement audited manual payment reconciliation path
+- [x] Implement scheduled invoice-expiration maintenance
 - [x] Define payment reconciliation/audit requirements
 - [ ] Define governance
 - [ ] Define operational security requirements
