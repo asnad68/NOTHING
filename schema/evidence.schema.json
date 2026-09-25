@@ -5,51 +5,151 @@
   "description": "Machine-readable evidence reference for a NOTHING verification process.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["evidence_id", "version", "type", "source", "collected_at", "integrity"],
+  "required": [
+    "evidence_id",
+    "version",
+    "type",
+    "source",
+    "collected_at",
+    "integrity"
+  ],
   "properties": {
-    "evidence_id": { "type": "string", "pattern": "^EVD-[0-9]{6}$" },
-    "version": { "type": "string", "const": "0.1" },
+    "evidence_id": {
+      "type": "string",
+      "pattern": "^EVD-[0-9]{6}$"
+    },
+    "version": {
+      "type": "string",
+      "const": "0.1"
+    },
     "type": {
       "type": "string",
-      "enum": ["web_page", "public_record", "authorized_document", "registry_record", "domain_control", "statement", "other"]
+      "enum": [
+        "web_page",
+        "public_record",
+        "authorized_document",
+        "registry_record",
+        "domain_control",
+        "statement",
+        "other"
+      ]
     },
     "source": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["reference"],
+      "required": [
+        "reference"
+      ],
       "properties": {
-        "reference": { "type": "string", "minLength": 1 },
-        "title": { "type": "string" },
-        "publisher": { "type": "string" },
-        "accessed_at": { "type": "string", "format": "date-time" }
+        "reference": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string"
+        },
+        "publisher": {
+          "type": "string"
+        },
+        "accessed_at": {
+          "type": "string",
+          "format": "date-time"
+        }
       }
     },
-    "collected_at": { "type": "string", "format": "date-time" },
+    "collected_at": {
+      "type": "string",
+      "format": "date-time"
+    },
     "integrity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["method"],
+      "required": [
+        "method"
+      ],
       "properties": {
-        "method": { "type": "string", "enum": ["none", "sha256"] },
-        "digest": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" }
-      }
+        "method": {
+          "type": "string",
+          "enum": [
+            "none",
+            "sha256"
+          ]
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[A-Fa-f0-9]{64}$"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "sha256"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "required": [
+              "digest"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "none"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "digest"
+              ]
+            }
+          }
+        }
+      ]
     },
-    "notes": { "type": "string" }
+    "notes": {
+      "type": "string"
+    }
   },
   "allOf": [
     {
       "if": {
         "properties": {
           "integrity": {
-            "required": ["method"],
-            "properties": { "method": { "const": "sha256" } }
+            "required": [
+              "method"
+            ],
+            "properties": {
+              "method": {
+                "const": "sha256"
+              }
+            }
           }
         },
-        "required": ["integrity"]
+        "required": [
+          "integrity"
+        ]
       },
       "then": {
         "properties": {
-          "integrity": { "required": ["method", "digest"] }
+          "integrity": {
+            "required": [
+              "method",
+              "digest"
+            ]
+          }
         }
       }
     }
