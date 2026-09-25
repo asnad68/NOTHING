@@ -224,6 +224,14 @@ class PostgreSQLNothingStore:
             with connection.transaction():
                 connection.execute(
                     """
+                    SELECT pg_advisory_xact_lock(
+                        hashtextextended(%s, 73939133)
+                    )
+                    """,
+                    ("nothing:migrations",),
+                )
+                connection.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS schema_migrations (
                         version INTEGER PRIMARY KEY,
                         applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
