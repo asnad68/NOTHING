@@ -173,3 +173,22 @@ The reference API server is implemented in `src/nothing_api.py`. It consumes the
 The production deployment target remains a stateless API tier behind TLS/WAF/API-gateway infrastructure with a PostgreSQL-compatible persistence layer.
 
 Authenticated ingestion is intentionally separate from Verify Web and the public GET resource surface.
+
+
+## Production authentication
+
+The production ingestion mode validates JWT access tokens from a configured identity provider.
+
+Required validation includes:
+
+- fixed HTTPS issuer
+- fixed API audience
+- fixed HTTPS JWKS URI
+- explicit asymmetric signing-algorithm allow-list
+- access-token type (\`at+jwt\` / \`application/at+jwt\`)
+- required time and identity claims
+- required authorization scope
+
+The reference static bearer mode exists only for local/reference deployments.
+
+Production write access should use \`NOTHING_AUTH_MODE=oidc-jwt\` and the environment settings documented in \`docs/PRODUCTION-AUTHORIZATION.md\`.
