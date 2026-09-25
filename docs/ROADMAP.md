@@ -50,7 +50,10 @@
 - [x] Define production deployment architecture
 - [x] Define production persistence and governance boundary
 - [x] Implement storage port and durable SQLite reference backend
-- [ ] Production PostgreSQL adapter and managed deployment
+- [x] Production PostgreSQL adapter and migration system
+- [x] Production JWT authentication and scope authorization
+- [x] Serializable transaction/retry and concurrency hardening
+- [ ] Managed production deployment, secrets and operational controls
 
 - [x] Define separate authenticated write-ingestion boundary
 - [x] Require bearer authentication and idempotency for writes
