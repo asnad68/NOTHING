@@ -310,6 +310,201 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
                 ),
             )
 
+
+    def test_manual_reconciliation_activates_entitlement_for_shared_payment(self):
+        plan_code = "manual-reconcile-" + uuid.uuid4().hex[:12]
+        price_id = str(uuid.uuid4())
+        destination = "3ABUrDAmi6w9TRsHuwFgdcDBLvXUzbAfZY"
+        self._insert_payment_plan(
+            plan_code=plan_code,
+            price_id=price_id,
+            asset_code="BTC",
+            network="bitcoin",
+            asset_kind="btc_utxo",
+            amount_atomic=5_000,
+            asset_decimals=8,
+            destination=destination,
+            routing_mode="manual_shared",
+        )
+        service = SubscriptionBillingService(
+            self.store,
+            policies={"bitcoin": ConfirmationPolicy(
+                required_confirmations=6,
+                require_finality=True,
+            )},
+        )
+        invoice = service.create_invoice(
+            customer_ref="manual-customer",
+            plan_code=plan_code,
+            price_id=price_id,
+            client_idempotency_key="manual-reconcile-key",
+            expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+            actor="billing-test",
+        )
+
+        event = PaymentObservation(
+            network="bitcoin",
+            asset_code="BTC",
+            asset_kind="btc_utxo",
+            destination=destination,
+            amount_atomic=5_000,
+            chain_event_key=chain_event_key(
+                network="bitcoin",
+                tx_hash="btc-manual-reconcile",
+                asset_kind="btc_utxo",
+                event_index=0,
+            ),
+            tx_hash="btc-manual-reconcile",
+            block_reference="block-1",
+            confirmation_count=6,
+            finality_status="final",
+            success=True,
+            observed_at=datetime.now(timezone.utc),
+            source="bitcoin-core-test",
+            routing_mode="manual_shared",
+            routing_reference=None,
+        )
+        service.record_unmatched_observation(
+            observation=event,
+            actor="billing-test",
+        )
+
+        with self.store._pool.connection() as connection:
+            payment_event_id = connection.execute(
+                """
+                SELECT payment_event_id
+                FROM payment_events
+                WHERE chain_event_key = %s
+                """,
+                (event.chain_event_key,),
+            ).fetchone()["payment_event_id"]
+
+        snapshot = service.manual_reconcile_payment(
+            payment_event_id=str(payment_event_id),
+            invoice_id=invoice.invoice_id,
+            actor="manual-reviewer",
+        )
+        self.assertEqual(snapshot["status"], "paid")
+        self.assertEqual(snapshot["received_atomic"], "5000")
+        self.assertIsNotNone(snapshot["entitlement"])
+        self.assertEqual(snapshot["entitlement"]["status"], "active")
+
+    def test_automatic_settlement_does_not_reopen_review_required_invoice(self):
+        plan_code = "review-state-" + uuid.uuid4().hex[:12]
+        price_id = str(uuid.uuid4())
+        destination = "0x1111111111111111111111111111111111111111"
+        self._insert_payment_plan(
+            plan_code=plan_code,
+            price_id=price_id,
+            asset_code="ETH",
+            network="ethereum",
+            asset_kind="native",
+            amount_atomic=1_000,
+            asset_decimals=18,
+            destination=destination,
+            routing_mode="manual_shared",
+        )
+        service = SubscriptionBillingService(
+            self.store,
+            policies={"ethereum": ConfirmationPolicy(
+                required_confirmations=0,
+                require_finality=True,
+            )},
+        )
+        invoice = service.create_invoice(
+            customer_ref="review-customer",
+            plan_code=plan_code,
+            price_id=price_id,
+            client_idempotency_key="review-state-key",
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
+            actor="billing-test",
+        )
+        event = PaymentObservation(
+            network="ethereum",
+            asset_code="ETH",
+            asset_kind="native",
+            destination=destination,
+            amount_atomic=1_000,
+            chain_event_key=chain_event_key(
+                network="ethereum",
+                tx_hash="0xreview-state",
+                asset_kind="native",
+            ),
+            tx_hash="0xreview-state",
+            block_reference="0xblock",
+            confirmation_count=10,
+            finality_status="final",
+            success=True,
+            observed_at=datetime.now(timezone.utc),
+            source="test-indexer",
+            routing_mode="manual_shared",
+            routing_reference=None,
+        )
+        first = service.settle_observation(
+            invoice_id=invoice.invoice_id,
+            observation=event,
+            actor="worker",
+        )
+        second = service.settle_observation(
+            invoice_id=invoice.invoice_id,
+            observation=event,
+            actor="worker",
+        )
+        self.assertEqual(first["status"], "review_required")
+        self.assertEqual(second["status"], "review_required")
+        self.assertIsNone(second["entitlement"])
+
+    def test_expire_invoices_changes_only_open_states_and_audits(self):
+        plan_code = "expiration-" + uuid.uuid4().hex[:12]
+        price_id = str(uuid.uuid4())
+        self._insert_payment_plan(
+            plan_code=plan_code,
+            price_id=price_id,
+            asset_code="XRP",
+            network="xrpl",
+            asset_kind="xrp",
+            amount_atomic=1_000_000,
+            asset_decimals=6,
+            destination="r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2",
+            routing_mode="xrp_destination_tag",
+        )
+        service = SubscriptionBillingService(
+            self.store,
+            policies={"xrpl": ConfirmationPolicy(
+                required_confirmations=1,
+                require_finality=True,
+            )},
+        )
+        invoice = service.create_invoice(
+            customer_ref="expiration-customer",
+            plan_code=plan_code,
+            price_id=price_id,
+            client_idempotency_key="expiration-key",
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=1),
+            actor="billing-test",
+        )
+        changed = service.expire_invoices(
+            actor="expiry-worker",
+            now=datetime.now(timezone.utc) + timedelta(minutes=2),
+        )
+        self.assertEqual(changed, 1)
+        snapshot = service.get_invoice(
+            invoice_id=invoice.invoice_id,
+            customer_ref="expiration-customer",
+        )
+        self.assertEqual(snapshot["status"], "expired")
+        with self.store._pool.connection() as connection:
+            count = connection.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM billing_audit_log
+                WHERE object_id = %s
+                  AND action = 'INVOICE_EXPIRED'
+                """,
+                (invoice.invoice_id,),
+            ).fetchone()["count"]
+        self.assertEqual(count, 1)
+
     def test_xrp_invoice_idempotent_replay_keeps_generated_tag(self):
         plan_code = "xrp-replay-" + uuid.uuid4().hex[:12]
         price_id = str(uuid.uuid4())
