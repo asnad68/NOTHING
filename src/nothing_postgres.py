@@ -278,13 +278,13 @@ class PostgreSQLNothingStore:
             with connection.transaction():
                 if self._statement_timeout_ms:
                     connection.execute(
-                        "SET LOCAL statement_timeout = %s",
-                        (self._statement_timeout_ms,),
+                        "SELECT set_config(%s, %s, true)",
+                        ("statement_timeout", f"{self._statement_timeout_ms}ms"),
                     )
                 if self._lock_timeout_ms:
                     connection.execute(
-                        "SET LOCAL lock_timeout = %s",
-                        (self._lock_timeout_ms,),
+                        "SELECT set_config(%s, %s, true)",
+                        ("lock_timeout", f"{self._lock_timeout_ms}ms"),
                     )
                 connection.execute(
                     "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE"
