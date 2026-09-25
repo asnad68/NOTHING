@@ -10,11 +10,17 @@ from typing import Any, Mapping
 
 NOTHING_ID_RE = re.compile(r"^NTH-[0-9]{6}$")
 CLAIM_ID_RE = re.compile(r"^CLM-[0-9]{6}$")
+EVIDENCE_ID_RE = re.compile(r"^EVD-[0-9]{6}$")
+EVENT_ID_RE = re.compile(r"^VER-[0-9]{6}$")
 SUBJECT_TYPES = {"business", "brand", "digital_channel", "authorized_agent", "other"}
 STATUSES = {"VERIFIED", "SOURCE-VERIFIED", "SELF-CLAIMED", "REVOKED"}
 SOURCE_TYPES = {"official_website", "public_record", "authorized_document", "third_party_source", "self_attestation"}
 AUTHORIZATION_STATUSES = {"CONFIRMED", "NOT_CONFIRMED"}
 REVOCATION_STATUSES = {"NOT_REVOKED", "REVOKED"}
+EVIDENCE_TYPES = {"web_page", "public_record", "authorized_document", "registry_record", "domain_control", "statement", "other"}
+INTEGRITY_METHODS = {"none", "sha256"}
+EVENT_STATUSES = {"VERIFIED", "SOURCE-VERIFIED", "NOT-VERIFIED", "INCONCLUSIVE", "REVOKED"}
+VERIFIER_TYPES = {"automated", "human", "hybrid"}
 
 
 class ValidationError(ValueError):
@@ -51,49 +57,30 @@ def _validate_source(source: Any) -> None:
 def _validate_authorization(authorization: Any) -> None:
     _require(isinstance(authorization, Mapping), "claim.authorization must be an object")
     if "status" in authorization:
-        _require(
-            authorization["status"] in AUTHORIZATION_STATUSES,
-            "claim.authorization.status is not supported",
-        )
+        _require(authorization["status"] in AUTHORIZATION_STATUSES, "claim.authorization.status is not supported")
     _optional_string(authorization.get("method"), "claim.authorization.method")
 
 
 def validate_identity(record: Mapping[str, Any]) -> None:
     """Validate deterministic structural rules only."""
     _require(isinstance(record, Mapping), "identity must be an object")
-    _require(
-        isinstance(record.get("nothing_id"), str)
-        and NOTHING_ID_RE.fullmatch(record["nothing_id"]) is not None,
-        "nothing_id must match NTH-XXXXXX",
-    )
+    _require(isinstance(record.get("nothing_id"), str) and NOTHING_ID_RE.fullmatch(record["nothing_id"]) is not None, "nothing_id must match NTH-XXXXXX")
     _require(record.get("version") == "0.1", "version must be 0.1")
-
     subject = record.get("subject")
     _require(isinstance(subject, Mapping), "subject must be an object")
-    _require(
-        isinstance(subject.get("name"), str) and bool(subject["name"].strip()),
-        "subject.name must be a non-empty string",
-    )
+    _require(isinstance(subject.get("name"), str) and bool(subject["name"].strip()), "subject.name must be a non-empty string")
     _require(subject.get("type") in SUBJECT_TYPES, "subject.type is not supported")
     _optional_string(subject.get("website"), "subject.website")
-
     claims = record.get("claims")
     _require(isinstance(claims, list), "claims must be an array")
-
     seen_claim_ids: set[str] = set()
     for claim in claims:
         _require(isinstance(claim, Mapping), "each claim must be an object")
         claim_id = claim.get("claim_id")
-        _require(
-            isinstance(claim_id, str) and CLAIM_ID_RE.fullmatch(claim_id) is not None,
-            "claim_id must match CLM-XXXXXX",
-        )
+        _require(isinstance(claim_id, str) and CLAIM_ID_RE.fullmatch(claim_id) is not None, "claim_id must match CLM-XXXXXX")
         _require(claim_id not in seen_claim_ids, f"duplicate claim_id: {claim_id}")
         seen_claim_ids.add(claim_id)
-        _require(
-            isinstance(claim.get("statement"), str) and bool(claim["statement"].strip()),
-            "claim.statement must be a non-empty string",
-        )
+        _require(isinstance(claim.get("statement"), str) and bool(claim["statement"].strip()), "claim.statement must be a non-empty string")
         _require(claim.get("status") in STATUSES, "claim.status is not supported")
         if "source" in claim:
             _validate_source(claim["source"])
@@ -101,7 +88,6 @@ def validate_identity(record: Mapping[str, Any]) -> None:
             _validate_authorization(claim["authorization"])
         _optional_datetime(claim.get("valid_from"), "claim.valid_from")
         _optional_datetime(claim.get("valid_until"), "claim.valid_until")
-
     if "revocation" in record:
         revocation = record["revocation"]
         _require(isinstance(revocation, Mapping), "revocation must be an object")
@@ -110,8 +96,73 @@ def validate_identity(record: Mapping[str, Any]) -> None:
         _optional_datetime(revocation.get("revoked_at"), "revocation.revoked_at")
 
 
-def load_identity(path: str | Path) -> dict[str, Any]:
+def validate_evidence(record: Mapping[str, Any]) -> None:
+    """Validate an EVD-XXXXXX evidence record."""
+    _require(isinstance(record, Mapping), "evidence must be an object")
+    evidence_id = record.get("evidence_id")
+    _require(isinstance(evidence_id, str) and EVIDENCE_ID_RE.fullmatch(evidence_id) is not None, "evidence_id must match EVD-XXXXXX")
+    _require(record.get("version") == "0.1", "evidence version must be 0.1")
+    _require(record.get("type") in EVIDENCE_TYPES, "evidence.type is not supported")
+    source = record.get("source")
+    _require(isinstance(source, Mapping), "evidence.source must be an object")
+    _require(isinstance(source.get("reference"), str) and bool(source["reference"].strip()), "evidence.source.reference is required")
+    _optional_string(source.get("title"), "evidence.source.title")
+    _optional_string(source.get("publisher"), "evidence.source.publisher")
+    _optional_datetime(source.get("accessed_at"), "evidence.source.accessed_at")
+    _require(isinstance(record.get("collected_at"), str), "evidence.collected_at is required")
+    _optional_datetime(record.get("collected_at"), "evidence.collected_at")
+    integrity = record.get("integrity")
+    _require(isinstance(integrity, Mapping), "evidence.integrity is required")
+    _require(integrity.get("method") in INTEGRITY_METHODS, "evidence.integrity.method is not supported")
+    digest = integrity.get("digest")
+    if integrity.get("method") == "sha256":
+        _require(isinstance(digest, str) and re.fullmatch(r"[A-Fa-f0-9]{64}", digest) is not None, "sha256 evidence digest must be 64 hexadecimal characters")
+    elif digest is not None:
+        _require(isinstance(digest, str) and bool(digest.strip()), "evidence.integrity.digest must be a non-empty string")
+    _optional_string(record.get("notes"), "evidence.notes")
+
+
+def validate_verification_event(record: Mapping[str, Any]) -> None:
+    """Validate a VER-XXXXXX verification event."""
+    _require(isinstance(record, Mapping), "verification event must be an object")
+    event_id = record.get("event_id")
+    _require(isinstance(event_id, str) and EVENT_ID_RE.fullmatch(event_id) is not None, "event_id must match VER-XXXXXX")
+    _require(record.get("version") == "0.1", "verification event version must be 0.1")
+    _optional_datetime(record.get("occurred_at"), "verification event occurred_at")
+    _require(isinstance(record.get("subject"), str) and NOTHING_ID_RE.fullmatch(record["subject"]) is not None, "verification event subject must match NTH-XXXXXX")
+    _require(isinstance(record.get("claim_id"), str) and CLAIM_ID_RE.fullmatch(record["claim_id"]) is not None, "verification event claim_id must match CLM-XXXXXX")
+    procedure = record.get("procedure")
+    _require(isinstance(procedure, Mapping), "verification event procedure is required")
+    _optional_string(procedure.get("id"), "procedure.id")
+    _optional_string(procedure.get("version"), "procedure.version")
+    if "verifier" in record:
+        verifier = record["verifier"]
+        _require(isinstance(verifier, Mapping), "verification event verifier must be an object")
+        if "type" in verifier:
+            _require(verifier["type"] in VERIFIER_TYPES, "verification event verifier.type is not supported")
+        _optional_string(verifier.get("identifier"), "verifier.identifier")
+    evidence = record.get("evidence", [])
+    _require(isinstance(evidence, list), "verification event evidence must be an array")
+    seen: set[str] = set()
+    for evidence_id in evidence:
+        _require(isinstance(evidence_id, str) and EVIDENCE_ID_RE.fullmatch(evidence_id) is not None, "verification event evidence IDs must match EVD-XXXXXX")
+        _require(evidence_id not in seen, f"duplicate evidence ID: {evidence_id}")
+        seen.add(evidence_id)
+    result = record.get("result")
+    _require(isinstance(result, Mapping), "verification event result is required")
+    _require(result.get("status") in EVENT_STATUSES, "verification event result.status is not supported")
+    _require(isinstance(result.get("scope"), str) and bool(result["scope"].strip()), "verification event result.scope is required")
+    _optional_string(result.get("reason"), "verification event result.reason")
+    if "supersedes" in record:
+        _require(isinstance(record["supersedes"], str) and EVENT_ID_RE.fullmatch(record["supersedes"]) is not None, "supersedes must match VER-XXXXXX")
+
+
+def load_json(path: str | Path) -> dict[str, Any]:
     return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def load_identity(path: str | Path) -> dict[str, Any]:
+    return load_json(path)
 
 
 def load_and_validate(path: str | Path) -> dict[str, Any]:
@@ -130,7 +181,6 @@ def validation_result(record: Mapping[str, Any]) -> dict[str, Any]:
 
 if __name__ == "__main__":
     import argparse
-
     parser = argparse.ArgumentParser(description="Validate a NOTHING identity JSON record.")
     parser.add_argument("file")
     args = parser.parse_args()
