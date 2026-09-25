@@ -40,3 +40,22 @@ Reference configuration:
 The bearer credential is never stored in source control. The reference server uses a configured credential; production should replace this single-token boundary with managed authentication infrastructure.
 
 The server consumes the existing protocol resolver rather than implementing a second verification engine.
+
+## Production mode
+
+Use `--storage-backend postgres --auth-mode oidc-jwt`.
+
+Required environment:
+- `NOTHING_POSTGRES_DSN`
+- `NOTHING_AUTH_ISSUER`
+- `NOTHING_AUTH_AUDIENCE`
+- `NOTHING_AUTH_JWKS_URI`
+
+Optional authentication controls:
+- `NOTHING_AUTH_REQUIRED_SCOPE`
+- `NOTHING_AUTH_ALLOWED_ALGORITHMS`
+- `NOTHING_AUTH_CLOCK_SKEW_SECONDS`
+- `NOTHING_AUTH_JWKS_CACHE_SECONDS`
+- `NOTHING_AUTH_JWKS_TIMEOUT_SECONDS`
+
+The PostgreSQL adapter uses a bounded connection pool and serializable write transactions with deterministic advisory locking and whole-operation retry on serialization failure/deadlock.
