@@ -5,48 +5,105 @@
   "description": "Experimental machine-readable identity record for the NOTHING project.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["nothing_id", "version", "subject", "claims"],
+  "required": [
+    "nothing_id",
+    "version",
+    "subject",
+    "claims"
+  ],
   "properties": {
-    "nothing_id": { "type": "string", "pattern": "^NTH-[0-9]{6}$" },
-    "version": { "type": "string", "const": "0.1" },
+    "nothing_id": {
+      "type": "string",
+      "pattern": "^NTH-[0-9]{6}$"
+    },
+    "version": {
+      "type": "string",
+      "const": "0.1"
+    },
     "subject": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "type"],
+      "required": [
+        "name",
+        "type"
+      ],
       "properties": {
-        "name": { "type": "string", "minLength": 1 },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
         "type": {
           "type": "string",
-          "enum": ["business", "brand", "digital_channel", "authorized_agent", "other"]
+          "enum": [
+            "business",
+            "brand",
+            "digital_channel",
+            "authorized_agent",
+            "other"
+          ]
         },
-        "website": { "type": "string", "format": "uri" }
+        "website": {
+          "type": "string",
+          "format": "uri"
+        }
       }
     },
     "claims": {
       "type": "array",
-      "items": { "$ref": "#/$defs/claim" }
+      "items": {
+        "$ref": "#/$defs/claim"
+      }
     },
     "revocation": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "status": { "type": "string", "enum": ["NOT_REVOKED", "REVOKED"] },
-        "reason": { "type": "string" },
-        "revoked_at": { "type": "string", "format": "date-time" }
-      }
+        "status": {
+          "type": "string",
+          "enum": [
+            "NOT_REVOKED",
+            "REVOKED"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "revoked_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "status"
+      ]
     }
   },
   "$defs": {
     "claim": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["claim_id", "statement", "status"],
+      "required": [
+        "claim_id",
+        "statement",
+        "status"
+      ],
       "properties": {
-        "claim_id": { "type": "string", "pattern": "^CLM-[0-9]{6}$" },
-        "statement": { "type": "string", "minLength": 1 },
+        "claim_id": {
+          "type": "string",
+          "pattern": "^CLM-[0-9]{6}$"
+        },
+        "statement": {
+          "type": "string",
+          "minLength": 1
+        },
         "status": {
           "type": "string",
-          "enum": ["VERIFIED", "SOURCE-VERIFIED", "SELF-CLAIMED", "REVOKED"]
+          "enum": [
+            "VERIFIED",
+            "SOURCE-VERIFIED",
+            "SELF-CLAIMED",
+            "REVOKED"
+          ]
         },
         "source": {
           "type": "object",
@@ -54,22 +111,47 @@
           "properties": {
             "type": {
               "type": "string",
-              "enum": ["official_website", "public_record", "authorized_document", "third_party_source", "self_attestation"]
+              "enum": [
+                "official_website",
+                "public_record",
+                "authorized_document",
+                "third_party_source",
+                "self_attestation"
+              ]
             },
-            "reference": { "type": "string" },
-            "checked_at": { "type": "string", "format": "date-time" }
+            "reference": {
+              "type": "string"
+            },
+            "checked_at": {
+              "type": "string",
+              "format": "date-time"
+            }
           }
         },
         "authorization": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "status": { "type": "string", "enum": ["CONFIRMED", "NOT_CONFIRMED"] },
-            "method": { "type": "string" }
+            "status": {
+              "type": "string",
+              "enum": [
+                "CONFIRMED",
+                "NOT_CONFIRMED"
+              ]
+            },
+            "method": {
+              "type": "string"
+            }
           }
         },
-        "valid_from": { "type": "string", "format": "date-time" },
-        "valid_until": { "type": "string", "format": "date-time" }
+        "valid_from": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "valid_until": {
+          "type": "string",
+          "format": "date-time"
+        }
       }
     }
   }
