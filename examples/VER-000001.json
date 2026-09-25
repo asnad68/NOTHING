@@ -1,0 +1,21 @@
+{
+  "event_id": "VER-000001",
+  "version": "0.1",
+  "occurred_at": "2026-09-25T00:00:00Z",
+  "subject": "NTH-000001",
+  "claim_id": "CLM-000001",
+  "procedure": {
+    "id": "NOTHING-BASIC-SOURCE-CHECK",
+    "version": "0.1"
+  },
+  "verifier": {
+    "type": "hybrid",
+    "identifier": "example-verifier"
+  },
+  "evidence": ["EVD-000001"],
+  "result": {
+    "status": "SOURCE-VERIFIED",
+    "scope": "The example claim is supported by the referenced example source for this synthetic fixture only.",
+    "reason": "Example event for protocol testing."
+  }
+}
