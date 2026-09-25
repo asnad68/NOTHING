@@ -4,7 +4,7 @@
     "title": "NOTHING Verification API",
     "version": "1.0.0",
     "summary": "Read-only API contract for NOTHING business identity verification.",
-    "description": "Deployment-neutral API contract for resolving a NOTHING identity into claims, evidence references, verification events and versioned procedures. The API does not turn structural validity into a universal trust score. The API layer is storage-agnostic and can run against the demo filesystem backend or durable persistence."
+    "description": "Deployment-neutral API contract for resolving a NOTHING identity into claims, evidence references, verification events and versioned procedures. The API does not turn structural validity into a universal trust score. The API layer is storage-agnostic and can run against the demo filesystem backend or durable persistence.\n\nProduction authenticated writes use JWT access tokens and scope authorization; local development may use the static bearer reference mode."
   },
   "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
   "paths": {
@@ -446,6 +446,16 @@
                 "$ref": "#/components/headers/WWWAuthenticate"
               }
             },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated access token is valid but lacks the required write-ingestion permission.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1401,8 +1411,8 @@
       "BearerAuth": {
         "type": "http",
         "scheme": "bearer",
-        "bearerFormat": "opaque",
-        "description": "Reference write-ingestion authentication. The deployment supplies a protected bearer credential; production use requires TLS."
+        "bearerFormat": "JWT",
+        "description": "Production path: signed OAuth 2.0 access token validated against a fixed HTTPS JWKS endpoint, with issuer, audience, expiry, token type and explicit signing-algorithm validation. The reference static-bearer mode remains for local development only."
       }
     }
   }
