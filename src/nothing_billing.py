@@ -194,11 +194,12 @@ class SubscriptionBillingService:
                     invoice_id, customer_ref, plan_code,
                     asset_code, network, asset_kind, asset_contract,
                     amount_atomic, asset_decimals, destination,
+                    routing_mode, routing_reference,
                     status, client_idempotency_key, expires_at,
                     quote_json
                 ) VALUES (
                     %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s,
+                    %s, %s, %s, %s, %s,
                     'open', %s, %s, %s
                 )
                 """,
@@ -213,6 +214,8 @@ class SubscriptionBillingService:
                     price["amount_atomic"],
                     price["asset_decimals"],
                     settlement_destination or price["destination"],
+                    settlement_routing_mode or price["routing_mode"],
+                    settlement_routing_reference,
                     client_idempotency_key,
                     expires_utc,
                     _canonical_json(quote),
