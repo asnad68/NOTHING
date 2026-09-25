@@ -29,12 +29,13 @@
 - [x] Enforce linear, acyclic supersession in v0.1
 
 ## Phase 3 — Verify Web
-- [ ] Build public identity lookup page
-- [ ] Build claim/evidence display
-- [ ] Build verification-event timeline
-- [ ] Build procedure reference display
-- [ ] Build revocation display
-- [ ] Add human-readable Nothing Mark
+- [x] Build public identity lookup page
+- [x] Build claim/evidence display
+- [x] Build verification-event timeline
+- [x] Build procedure reference display
+- [x] Build revocation display
+- [x] Add human-readable Nothing Mark
+- [ ] Deploy static verifier with production TLS/CDN/CSP
 
 ## Phase 4 — API
 - [x] Define resource model from resolved protocol graph
