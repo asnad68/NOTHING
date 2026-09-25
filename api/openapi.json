@@ -1,0 +1,1031 @@
+{
+  "openapi": "3.1.2",
+  "info": {
+    "title": "NOTHING Verification API",
+    "version": "1.0.0",
+    "summary": "Read-only API contract for NOTHING business identity verification.",
+    "description": "Deployment-neutral API contract for resolving a NOTHING identity into claims, evidence references, verification events and versioned procedures. The API does not turn structural validity into a universal trust score."
+  },
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "paths": {
+    "/v1/identity/{nothing_id}": {
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "summary": "Resolve a NOTHING identity",
+        "operationId": "getIdentity",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/NothingId"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resolved identity record.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              },
+              "Last-Modified": {
+                "$ref": "#/components/headers/LastModified"
+              },
+              "X-NOTHING-Protocol-Version": {
+                "$ref": "#/components/headers/ProtocolVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityResponse"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Representation has not changed since the supplied ETag.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid Nothing ID.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nothing ID is syntactically valid but not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded.",
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/RetryAfter"
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Verification data is temporarily unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/evidence/{evidence_id}": {
+      "get": {
+        "tags": [
+          "Evidence"
+        ],
+        "summary": "Retrieve an evidence record",
+        "operationId": "getEvidence",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/EvidenceId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Evidence record.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              },
+              "Last-Modified": {
+                "$ref": "#/components/headers/LastModified"
+              },
+              "X-NOTHING-Protocol-Version": {
+                "$ref": "#/components/headers/ProtocolVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid evidence ID.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Evidence not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded.",
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/RetryAfter"
+              }
+            }
+          },
+          "503": {
+            "description": "Evidence data is temporarily unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/verification-events/{event_id}": {
+      "get": {
+        "tags": [
+          "Verification"
+        ],
+        "summary": "Retrieve a verification event",
+        "operationId": "getVerificationEvent",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/EventId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Verification event with its resolved procedure reference.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              },
+              "Last-Modified": {
+                "$ref": "#/components/headers/LastModified"
+              },
+              "X-NOTHING-Protocol-Version": {
+                "$ref": "#/components/headers/ProtocolVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationEventResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid event ID.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Verification event not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded.",
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/RetryAfter"
+              }
+            }
+          },
+          "503": {
+            "description": "Verification data is temporarily unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/procedures/{procedure_id}/{version}": {
+      "get": {
+        "tags": [
+          "Procedures"
+        ],
+        "summary": "Retrieve an exact verification procedure version",
+        "operationId": "getProcedure",
+        "parameters": [
+          {
+            "name": "procedure_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^NOTHING-[A-Z0-9-]+$"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Exact versioned procedure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProcedureResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid procedure identifier or version.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Procedure version not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded.",
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/RetryAfter"
+              }
+            }
+          },
+          "503": {
+            "description": "Procedure registry is temporarily unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "NothingId": {
+        "name": "nothing_id",
+        "in": "path",
+        "required": true,
+        "description": "Project-level NOTHING identity identifier.",
+        "schema": {
+          "type": "string",
+          "pattern": "^NTH-[0-9]{6}$"
+        }
+      },
+      "EvidenceId": {
+        "name": "evidence_id",
+        "in": "path",
+        "required": true,
+        "description": "Project-level evidence identifier.",
+        "schema": {
+          "type": "string",
+          "pattern": "^EVD-[0-9]{6}$"
+        }
+      },
+      "EventId": {
+        "name": "event_id",
+        "in": "path",
+        "required": true,
+        "description": "Project-level verification event identifier.",
+        "schema": {
+          "type": "string",
+          "pattern": "^VER-[0-9]{6}$"
+        }
+      },
+      "IfNoneMatch": {
+        "name": "If-None-Match",
+        "in": "header",
+        "required": false,
+        "description": "Optional ETag for conditional retrieval.",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "headers": {
+      "ETag": {
+        "description": "Opaque representation validator used with If-None-Match.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "LastModified": {
+        "description": "Last modification time of the served representation.",
+        "schema": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\\\.[0-9]+)?(Z|z|[+-](0[0-9]|1[0-9]|2[0-3]):[0-5][0-9])$"
+        }
+      },
+      "ProtocolVersion": {
+        "description": "NOTHING protocol version used to resolve the representation.",
+        "schema": {
+          "type": "string",
+          "const": "0.1"
+        }
+      },
+      "RetryAfter": {
+        "description": "Number of seconds the client should wait before retrying.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "schemas": {
+      "ApiError": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "title",
+          "status",
+          "code",
+          "detail"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "format": "uri-reference"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 599
+          },
+          "code": {
+            "type": "string",
+            "minLength": 1
+          },
+          "detail": {
+            "type": "string",
+            "minLength": 1
+          },
+          "instance": {
+            "type": "string",
+            "format": "uri-reference"
+          }
+        }
+      },
+      "ApiMeta": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "api_version",
+          "protocol_version"
+        ],
+        "properties": {
+          "api_version": {
+            "type": "string",
+            "const": "1"
+          },
+          "protocol_version": {
+            "type": "string",
+            "const": "0.1"
+          },
+          "generated_at": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\\\.[0-9]+)?(Z|z|[+-](0[0-9]|1[0-9]|2[0-3]):[0-5][0-9])$"
+          },
+          "demo": {
+            "type": "boolean"
+          }
+        }
+      },
+      "IdentityResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/IdentityView"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ApiMeta"
+          }
+        }
+      },
+      "EvidenceResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/EvidenceView"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ApiMeta"
+          }
+        }
+      },
+      "VerificationEventResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/VerificationEventView"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ApiMeta"
+          }
+        }
+      },
+      "ProcedureResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ProcedureView"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ApiMeta"
+          }
+        }
+      },
+      "IdentityView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "version",
+          "subject",
+          "claims",
+          "revocation"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^NTH-[0-9]{6}$"
+          },
+          "version": {
+            "type": "string",
+            "const": "0.1"
+          },
+          "subject": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "type"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "business",
+                  "brand",
+                  "digital_channel",
+                  "authorized_agent",
+                  "other"
+                ]
+              },
+              "website": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "claims": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ClaimView"
+            }
+          },
+          "revocation": {
+            "$ref": "#/components/schemas/RevocationView"
+          }
+        }
+      },
+      "ClaimView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "statement",
+          "recorded_status",
+          "current_verification"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^CLM-[0-9]{6}$"
+          },
+          "statement": {
+            "type": "string",
+            "minLength": 1
+          },
+          "recorded_status": {
+            "type": "string",
+            "enum": [
+              "VERIFIED",
+              "SOURCE-VERIFIED",
+              "SELF-CLAIMED",
+              "REVOKED"
+            ]
+          },
+          "current_verification": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CurrentVerificationView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "CurrentVerificationView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_id",
+          "status",
+          "occurred_at",
+          "scope",
+          "procedure",
+          "evidence_ids"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "pattern": "^VER-[0-9]{6}$"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "VERIFIED",
+              "SOURCE-VERIFIED",
+              "NOT-VERIFIED",
+              "INCONCLUSIVE",
+              "REVOKED"
+            ]
+          },
+          "occurred_at": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\\\.[0-9]+)?(Z|z|[+-](0[0-9]|1[0-9]|2[0-3]):[0-5][0-9])$"
+          },
+          "scope": {
+            "type": "string",
+            "minLength": 1
+          },
+          "procedure": {
+            "$ref": "#/components/schemas/ProcedureReference"
+          },
+          "evidence_ids": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^EVD-[0-9]{6}$"
+            }
+          }
+        }
+      },
+      "ProcedureReference": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "version"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^NOTHING-[A-Z0-9-]+$"
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "RevocationView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "NOT_REVOKED",
+              "REVOKED"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "revoked_at": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\\\.[0-9]+)?(Z|z|[+-](0[0-9]|1[0-9]|2[0-3]):[0-5][0-9])$"
+          }
+        }
+      },
+      "EvidenceView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "version",
+          "type",
+          "source",
+          "collected_at",
+          "integrity"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^EVD-[0-9]{6}$"
+          },
+          "version": {
+            "type": "string",
+            "const": "0.1"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "web_page",
+              "public_record",
+              "authorized_document",
+              "registry_record",
+              "domain_control",
+              "statement",
+              "other"
+            ]
+          },
+          "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "reference"
+            ],
+            "properties": {
+              "reference": {
+                "type": "string",
+                "minLength": 1
+              },
+              "title": {
+                "type": "string"
+              },
+              "publisher": {
+                "type": "string"
+              },
+              "accessed_at": {
+                "type": "string",
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\\\.[0-9]+)?(Z|z|[+-](0[0-9]|1[0-9]|2[0-3]):[0-5][0-9])$"
+              }
+            }
+          },
+          "collected_at": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\\\.[0-9]+)?(Z|z|[+-](0[0-9]|1[0-9]|2[0-3]):[0-5][0-9])$"
+          },
+          "integrity": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "method"
+            ],
+            "properties": {
+              "method": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "sha256"
+                ]
+              },
+              "digest": {
+                "type": "string",
+                "pattern": "^[A-Fa-f0-9]{64}$"
+              }
+            }
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      },
+      "VerificationEventView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "version",
+          "occurred_at",
+          "subject",
+          "claim_id",
+          "procedure",
+          "result",
+          "evidence"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^VER-[0-9]{6}$"
+          },
+          "version": {
+            "type": "string",
+            "const": "0.1"
+          },
+          "occurred_at": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\\\.[0-9]+)?(Z|z|[+-](0[0-9]|1[0-9]|2[0-3]):[0-5][0-9])$"
+          },
+          "subject": {
+            "type": "string",
+            "pattern": "^NTH-[0-9]{6}$"
+          },
+          "claim_id": {
+            "type": "string",
+            "pattern": "^CLM-[0-9]{6}$"
+          },
+          "procedure": {
+            "$ref": "#/components/schemas/ProcedureReference"
+          },
+          "verifier": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "automated",
+                      "human",
+                      "hybrid"
+                    ]
+                  },
+                  "identifier": {
+                    "type": "string"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^EVD-[0-9]{6}$"
+            }
+          },
+          "result": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "status",
+              "scope"
+            ],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "VERIFIED",
+                  "SOURCE-VERIFIED",
+                  "NOT-VERIFIED",
+                  "INCONCLUSIVE",
+                  "REVOKED"
+                ]
+              },
+              "scope": {
+                "type": "string",
+                "minLength": 1
+              },
+              "reason": {
+                "type": "string"
+              }
+            }
+          },
+          "supersedes": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^VER-[0-9]{6}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "ProcedureView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "version",
+          "title",
+          "status",
+          "method_class",
+          "allowed_results",
+          "requires_evidence",
+          "steps"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^NOTHING-[A-Z0-9-]+$"
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "ACTIVE",
+              "DEPRECATED",
+              "RETIRED"
+            ]
+          },
+          "method_class": {
+            "type": "string",
+            "enum": [
+              "source_check",
+              "domain_control",
+              "authorization_check",
+              "identity_attribute_check",
+              "other"
+            ]
+          },
+          "allowed_results": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "VERIFIED",
+                "SOURCE-VERIFIED",
+                "NOT-VERIFIED",
+                "INCONCLUSIVE",
+                "REVOKED"
+              ]
+            }
+          },
+          "requires_evidence": {
+            "type": "boolean"
+          },
+          "evidence_types": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "web_page",
+                "public_record",
+                "authorized_document",
+                "registry_record",
+                "domain_control",
+                "statement",
+                "other"
+              ]
+            }
+          },
+          "steps": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "step_id",
+                "description"
+              ],
+              "properties": {
+                "step_id": {
+                  "type": "string",
+                  "pattern": "^STEP-[0-9]{2}$"
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          },
+          "published_at": {
+            "type": "string"
+          },
+          "deprecated_at": {
+            "type": "string"
+          },
+          "retired_at": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
