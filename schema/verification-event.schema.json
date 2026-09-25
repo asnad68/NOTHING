@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/asnad68/NOTHING/blob/main/schema/verification-event.schema.json",
+  "title": "NOTHING Verification Event",
+  "description": "An auditable event describing how a claim was evaluated.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_id", "version", "occurred_at", "subject", "claim_id", "procedure", "result"],
+  "properties": {
+    "event_id": { "type": "string", "pattern": "^VER-[0-9]{6}$" },
+    "version": { "type": "string", "const": "0.1" },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "subject": { "type": "string", "pattern": "^NTH-[0-9]{6}$" },
+    "claim_id": { "type": "string", "pattern": "^CLM-[0-9]{6}$" },
+    "procedure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 }
+      }
+    },
+    "verifier": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "enum": ["automated", "human", "hybrid"] },
+        "identifier": { "type": "string" }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^EVD-[0-9]{6}$" },
+      "uniqueItems": true
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "scope"],
+      "properties": {
+        "status": { "type": "string", "enum": ["VERIFIED", "SOURCE-VERIFIED", "NOT-VERIFIED", "INCONCLUSIVE", "REVOKED"] },
+        "scope": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string" }
+      }
+    },
+    "supersedes": { "type": "string", "pattern": "^VER-[0-9]{6}$" },
+    "metadata": { "type": "object" }
+  }
+}
