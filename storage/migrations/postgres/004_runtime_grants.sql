@@ -41,3 +41,6 @@ ALTER TABLE verification_events OWNER TO nothing_migrator;
 ALTER TABLE event_evidence OWNER TO nothing_migrator;
 ALTER TABLE audit_log OWNER TO nothing_migrator;
 ALTER TABLE ingestion_idempotency OWNER TO nothing_migrator;
+
+-- BIGSERIAL audit sequences need runtime sequence usage as well as INSERT.
+GRANT USAGE, SELECT ON SEQUENCE audit_log_audit_id_seq TO nothing_app;
