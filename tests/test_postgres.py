@@ -76,7 +76,7 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
             row = connection.execute(
                 "SELECT MAX(version) AS version FROM schema_migrations"
             ).fetchone()
-        self.assertEqual(row["version"], 8)
+        self.assertEqual(row["version"], 9)
 
         identity = self.store.get_identity("NTH-000001")
         self.assertEqual(identity.record["nothing_id"], "NTH-000001")
