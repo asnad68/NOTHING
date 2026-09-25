@@ -158,19 +158,6 @@
           "retired_at"
         ]
       }
-    },
-    {
-      "if": {
-        "properties": {
-          "status": {
-            "const": "ACTIVE"
-          }
-        },
-        "required": [
-          "status"
-        ]
-      },
-      "then": {}
     }
   ]
 }
