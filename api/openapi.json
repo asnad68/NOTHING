@@ -1892,6 +1892,7 @@
           "entitlement_id",
           "invoice_id",
           "plan_code",
+          "duration_seconds",
           "status",
           "starts_at",
           "expires_at",
@@ -1970,6 +1971,10 @@
           },
           "plan_code": {
             "type": "string"
+          },
+          "duration_seconds": {
+            "type": "integer",
+            "minimum": 1
           },
           "asset_code": {
             "type": "string"
