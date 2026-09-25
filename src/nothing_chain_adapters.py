@@ -81,6 +81,15 @@ def _hex_int(value: str | None) -> int | None:
     return int(value, 16)
 
 
+def _as_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _norm_evm_address(value: str) -> str:
     if not isinstance(value, str) or not value.startswith("0x") or len(value) != 42:
         raise ChainAdapterError("invalid EVM address")
@@ -255,6 +264,16 @@ class EvmJsonRpcAdapter:
         )
 
 
+
+@dataclass(frozen=True)
+class XrplDiscoveryResult:
+    observations: tuple[PaymentObservation, ...]
+    newest_tx_hash: str | None
+    checkpoint_tx_hash: str | None
+    checkpoint_ledger_index: int | None
+    reached_checkpoint: bool
+
+
 @dataclass(frozen=True)
 class XrplJsonRpcAdapter:
     rpc_url: str = "https://xrplcluster.com/"
@@ -336,78 +355,172 @@ class XrplJsonRpcAdapter:
         account: str,
         limit: int = 200,
     ) -> list[PaymentObservation]:
-        result = self._rpc.call(
-            "account_tx",
-            [
-                {
-                    "account": account,
-                    "ledger_index_min": -1,
-                    "ledger_index_max": -1,
-                    "binary": False,
-                    "forward": False,
-                    "limit": limit,
-                    "api_version": 2,
-                }
-            ],
+        return list(
+            self.discover_recent_payments_with_checkpoint(
+                account=account,
+                limit=limit,
+                stop_after_tx_hash=None,
+                max_pages=1,
+            ).observations
         )
-        if not isinstance(result, dict):
-            raise ChainAdapterError("XRPL account_tx response is invalid")
+
+    def discover_recent_payments_with_checkpoint(
+        self,
+        *,
+        account: str,
+        limit: int = 200,
+        stop_after_tx_hash: str | None = None,
+        max_pages: int = 20,
+    ) -> "XrplDiscoveryResult":
+        if not account.strip():
+            raise ChainAdapterError("XRPL account is required")
+        if limit < 1:
+            raise ChainAdapterError("XRPL account_tx limit must be positive")
+        if max_pages < 1:
+            raise ChainAdapterError("XRPL max_pages must be positive")
 
         observations: list[PaymentObservation] = []
-        for item in result.get("transactions", []):
-            if not isinstance(item, dict):
-                continue
-            if item.get("tx_json", {}).get("TransactionType") != "Payment":
-                continue
-            tx = item.get("tx_json", item)
-            meta = item.get("meta", {}) or {}
-            validated = bool(item.get("validated"))
-            if not validated or meta.get("TransactionResult") != "tesSUCCESS":
-                continue
-            destination = tx.get("Destination")
-            if destination != account:
-                continue
-            delivered = meta.get("delivered_amount")
-            if delivered is None:
-                delivered = meta.get("DeliveredAmount")
-            if not isinstance(delivered, str):
-                continue
-            amount_value = delivered
-            tag = tx.get("DestinationTag")
-            observations.append(
-                PaymentObservation(
-                    network="xrpl",
-                    asset_code="XRP",
-                    asset_kind="xrp",
-                    destination=destination,
-                    amount_atomic=int(amount_value),
-                    chain_event_key=chain_event_key(
-                        network="xrpl",
-                        tx_hash=str(tx.get("hash", "")),
-                        asset_kind="xrp",
-                    ),
-                    tx_hash=str(tx.get("hash", "")),
-                    block_reference=str(
+        marker: Any | None = None
+        newest_tx_hash: str | None = None
+        checkpoint_tx_hash: str | None = None
+        checkpoint_ledger_index: int | None = None
+        reached_checkpoint = stop_after_tx_hash is None
+
+        for _ in range(max_pages):
+            params: dict[str, Any] = {
+                "account": account,
+                "ledger_index_min": -1,
+                "ledger_index_max": -1,
+                "binary": False,
+                "forward": False,
+                "limit": limit,
+                "api_version": 2,
+            }
+            if marker is not None:
+                params["marker"] = marker
+
+            result = self._rpc.call("account_tx", [params])
+            if not isinstance(result, dict):
+                raise ChainAdapterError("XRPL account_tx response is invalid")
+
+            transactions = result.get("transactions", [])
+            if not isinstance(transactions, list):
+                raise ChainAdapterError("XRPL account_tx transactions is invalid")
+
+            for item in transactions:
+                if not isinstance(item, dict):
+                    continue
+                tx = item.get("tx_json", item)
+                if not isinstance(tx, dict):
+                    continue
+
+                tx_hash = str(tx.get("hash", "")).strip()
+                if tx_hash and newest_tx_hash is None:
+                    newest_tx_hash = tx_hash
+
+                if stop_after_tx_hash and tx_hash == stop_after_tx_hash:
+                    checkpoint_tx_hash = tx_hash
+                    checkpoint_ledger_index = _as_int(
                         item.get("ledger_index")
                         or tx.get("ledger_index")
-                        or ""
-                    ),
-                    confirmation_count=1,
-                    finality_status="final",
-                    success=True,
-                    observed_at=_utc_now(),
-                    source="xrpl-json-rpc-account-tx",
-                    routing_mode=(
-                        "xrp_destination_tag"
-                        if tag is not None
-                        else "manual_shared"
-                    ),
-                    routing_reference=(
-                        str(tag) if tag is not None else None
-                    ),
+                    )
+                    reached_checkpoint = True
+                    break
+
+                validated = bool(item.get("validated"))
+                if not validated:
+                    continue
+                if tx.get("TransactionType") != "Payment":
+                    continue
+                if item.get("meta", {}).get("TransactionResult") != "tesSUCCESS":
+                    continue
+                if tx.get("Destination") != account:
+                    continue
+
+                meta = item.get("meta", {}) or {}
+                delivered = meta.get("delivered_amount")
+                if delivered is None:
+                    delivered = meta.get("DeliveredAmount")
+                if not isinstance(delivered, str) or not delivered.isdigit():
+                    continue
+
+                tag = tx.get("DestinationTag")
+                observations.append(
+                    PaymentObservation(
+                        network="xrpl",
+                        asset_code="XRP",
+                        asset_kind="xrp",
+                        destination=account,
+                        amount_atomic=int(delivered),
+                        chain_event_key=chain_event_key(
+                            network="xrpl",
+                            tx_hash=tx_hash,
+                            asset_kind="xrp",
+                        ),
+                        tx_hash=tx_hash,
+                        block_reference=str(
+                            item.get("ledger_index")
+                            or tx.get("ledger_index")
+                            or ""
+                        ),
+                        confirmation_count=1,
+                        finality_status="final",
+                        success=True,
+                        observed_at=_utc_now(),
+                        source="xrpl-json-rpc-account-tx",
+                        routing_mode=(
+                            "xrp_destination_tag"
+                            if tag is not None
+                            else "manual_shared"
+                        ),
+                        routing_reference=(
+                            str(tag) if tag is not None else None
+                        ),
+                    )
                 )
+
+            if reached_checkpoint:
+                break
+
+            page_marker = result.get("marker")
+            if not page_marker:
+                if transactions:
+                    last = transactions[-1]
+                    if isinstance(last, dict):
+                        tx = last.get("tx_json", last)
+                        if isinstance(tx, dict):
+                            checkpoint_tx_hash = str(tx.get("hash", "")).strip() or None
+                            checkpoint_ledger_index = _as_int(
+                                last.get("ledger_index")
+                                or tx.get("ledger_index")
+                            )
+                reached_checkpoint = stop_after_tx_hash is None
+                break
+            marker = page_marker
+
+        if stop_after_tx_hash and not reached_checkpoint:
+            raise ChainAdapterError(
+                "XRPL worker checkpoint was not found within the configured page window"
             )
-        return observations
+
+        if checkpoint_tx_hash is None and transactions:
+            last = transactions[-1]
+            if isinstance(last, dict):
+                tx = last.get("tx_json", last)
+                if isinstance(tx, dict):
+                    checkpoint_tx_hash = str(tx.get("hash", "")).strip() or None
+                    checkpoint_ledger_index = _as_int(
+                        last.get("ledger_index")
+                        or tx.get("ledger_index")
+                    )
+
+        return XrplDiscoveryResult(
+            observations=tuple(observations),
+            newest_tx_hash=newest_tx_hash,
+            checkpoint_tx_hash=checkpoint_tx_hash,
+            checkpoint_ledger_index=checkpoint_ledger_index,
+            reached_checkpoint=reached_checkpoint,
+        )
 
 
 @dataclass(frozen=True)
