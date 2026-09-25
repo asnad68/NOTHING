@@ -701,6 +701,16 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
 
         self.assertEqual(allocation_count, 1)
         self.assertEqual(entitlement_count, 1)
+        self.assertTrue(
+            service.has_active_entitlement(
+                customer_ref="customer-payment-test",
+                plan_code=plan_code,
+            )
+        )
+        service.require_active_entitlement(
+            customer_ref="customer-payment-test",
+            plan_code=plan_code,
+        )
 
 
     def _insert_payment_plan(
@@ -1104,6 +1114,48 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
         self.assertEqual(second.routing_mode, "xrp_destination_tag")
         self.assertEqual(second.routing_reference, first.routing_reference)
         self.assertIsNotNone(first.routing_reference)
+
+    def test_billing_invoice_idempotency_fingerprint_conflict(self):
+        plan_code = "fingerprint-" + uuid.uuid4().hex[:12]
+        price_id = str(uuid.uuid4())
+        self._insert_payment_plan(
+            plan_code=plan_code,
+            price_id=price_id,
+            asset_code="XRP",
+            network="xrpl",
+            asset_kind="xrp",
+            amount_atomic=2_500_000,
+            asset_decimals=6,
+            destination="r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2",
+            routing_mode="xrp_destination_tag",
+        )
+        service = SubscriptionBillingService(
+            self.store,
+            policies={"xrpl": ConfirmationPolicy(
+                required_confirmations=1,
+                require_finality=True,
+            )},
+        )
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
+        service.create_invoice(
+            customer_ref="fingerprint-customer",
+            plan_code=plan_code,
+            price_id=price_id,
+            client_idempotency_key="fingerprint-key",
+            expires_at=expires_at,
+            actor="test-billing",
+            client_request_fingerprint="a" * 64,
+        )
+        with self.assertRaises(ConflictError):
+            service.create_invoice(
+                customer_ref="fingerprint-customer",
+                plan_code=plan_code,
+                price_id=price_id,
+                client_idempotency_key="fingerprint-key",
+                expires_at=expires_at,
+                actor="test-billing",
+                client_request_fingerprint="b" * 64,
+            )
 
     def test_final_payment_status_cannot_downgrade_on_stale_observation(self):
         service = SubscriptionBillingService(
