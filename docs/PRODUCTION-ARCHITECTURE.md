@@ -195,7 +195,7 @@ The public API must never expose:
 - storage administration endpoints
 - write access without an authenticated ingestion boundary
 
-Future write operations should be placed behind a separate authenticated ingestion path rather than turning public GET endpoints into generic CRUD.
+Write operations are isolated behind the separate authenticated ingestion path rather than turning public GET endpoints into generic CRUD.
 
 ## 10. Read scaling
 
@@ -299,7 +299,7 @@ The import is idempotent for identical content. Immutable records reject silent 
 
 ## 16. Current boundary
 
-The reference API is still read-only.
+The public resource API is read-only, while authenticated write ingestion is implemented as a separate mutation boundary.
 
 The production architecture is now defined at the persistence and deployment boundary, but actual production operation still requires an audited deployment, managed credentials, PostgreSQL implementation, TLS/gateway configuration, observability and jurisdiction-specific legal/privacy review.
 
