@@ -118,6 +118,34 @@ class SchemaParityTests(unittest.TestCase):
         del event["procedure"]["version"]
         assert_parity(self, "verification-event", event, validate_verification_event)
 
+    def test_extra_fields_are_rejected_by_both_layers(self) -> None:
+        identity = load_json(ROOT / "tests/fixtures/valid-identity.json")
+        identity["unexpected"] = True
+        assert_parity(self, "identity", identity, validate_identity)
+
+        evidence = load_json(ROOT / "examples/EVD-000001.json")
+        evidence["unexpected"] = True
+        assert_parity(self, "evidence", evidence, validate_evidence)
+
+        event = load_json(ROOT / "examples/VER-000001.json")
+        event["unexpected"] = True
+        assert_parity(self, "verification-event", event, validate_verification_event)
+
+        registry = load_json(ROOT / "procedures/registry.json")
+        procedure = copy.deepcopy(registry["procedures"][0])
+        procedure["unexpected"] = True
+        assert_parity(self, "procedure", procedure, validate_procedure)
+
+    def test_naive_datetime_is_rejected_by_both_layers(self) -> None:
+        evidence = load_json(ROOT / "examples/EVD-000001.json")
+        evidence["collected_at"] = "2026-09-25T00:00:00"
+        assert_parity(self, "evidence", evidence, validate_evidence)
+
+        registry = load_json(ROOT / "procedures/registry.json")
+        procedure = copy.deepcopy(registry["procedures"][0])
+        procedure["published_at"] = "2026-09-25T00:00:00"
+        assert_parity(self, "procedure", procedure, validate_procedure)
+
     def test_deprecated_procedure_requires_deprecated_at(self) -> None:
         registry = load_json(ROOT / "procedures/registry.json")
         procedure = copy.deepcopy(registry["procedures"][0])
