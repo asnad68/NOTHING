@@ -748,7 +748,7 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
             connection.execute(
                 """
                 INSERT INTO billing_invoices(
-                    invoice_id, customer_ref, plan_code, price_id,
+                    invoice_id, customer_ref, plan_code,
                     asset_code, network, asset_kind, asset_contract,
                     amount_atomic, asset_decimals, destination,
                     routing_mode, routing_reference, plan_duration_seconds,
