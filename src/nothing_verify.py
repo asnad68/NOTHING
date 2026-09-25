@@ -11,12 +11,13 @@ import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping
-from urllib.parse import urlparse
 
 NOTHING_ID_RE = re.compile(r"^NTH-[0-9]{6}$")
 CLAIM_ID_RE = re.compile(r"^CLM-[0-9]{6}$")
 EVIDENCE_ID_RE = re.compile(r"^EVD-[0-9]{6}$")
 EVENT_ID_RE = re.compile(r"^VER-[0-9]{6}$")
+DATETIME_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|z|[+-](0[0-9]|1[0-9]|2[0-3]):[0-5][0-9])$")
+URI_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:[^\s]+$")
 SUBJECT_TYPES = {"business", "brand", "digital_channel", "authorized_agent", "other"}
 STATUSES = {"VERIFIED", "SOURCE-VERIFIED", "SELF-CLAIMED", "REVOKED"}
 SOURCE_TYPES = {
@@ -81,7 +82,9 @@ def _optional_datetime(value: Any, field: str) -> None:
     if value is not None:
         _require(isinstance(value, str), f"{field} must be an ISO-8601 string")
         try:
-            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            _require(DATETIME_RE.fullmatch(value) is not None, f"{field} must match the NOTHING date-time profile")
+            normalized = value[:-1] + "+00:00" if value.endswith(("Z", "z")) else value
+            parsed = datetime.fromisoformat(normalized)
             _require(parsed.tzinfo is not None and parsed.utcoffset() is not None, f"{field} must include a timezone offset")
         except ValueError as exc:
             raise ValidationError(
@@ -97,8 +100,7 @@ def _required_datetime(value: Any, field: str) -> None:
 def _optional_uri(value: Any, field: str) -> None:
     if value is not None:
         _required_string(value, field)
-        parsed = urlparse(value)
-        _require(bool(parsed.scheme), f"{field} must be a valid URI")
+        _require(URI_RE.fullmatch(value) is not None, f"{field} must match the NOTHING URI profile")
 
 
 def _validate_source(source: Any) -> None:
