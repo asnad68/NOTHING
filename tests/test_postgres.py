@@ -293,6 +293,91 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
         self.assertTrue(allowed["checkpoints"])
         self.assertFalse(allowed["identity_heads_update"])
 
+    def test_payment_runtime_privileges_are_column_limited(self):
+        with self.store._pool.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT
+                    has_column_privilege(
+                        'nothing_payment',
+                        'billing_invoices',
+                        'status',
+                        'UPDATE'
+                    ) AS invoice_status_update,
+                    has_column_privilege(
+                        'nothing_payment',
+                        'billing_invoices',
+                        'quote_json',
+                        'UPDATE'
+                    ) AS invoice_quote_update,
+                    has_column_privilege(
+                        'nothing_payment',
+                        'payment_events',
+                        'finality_status',
+                        'UPDATE'
+                    ) AS payment_finality_update,
+                    has_column_privilege(
+                        'nothing_payment',
+                        'payment_events',
+                        'amount_atomic',
+                        'UPDATE'
+                    ) AS payment_amount_update,
+                    has_column_privilege(
+                        'nothing_payment',
+                        'subscription_entitlements',
+                        'status',
+                        'UPDATE'
+                    ) AS entitlement_status_update,
+                    has_column_privilege(
+                        'nothing_payment',
+                        'subscription_entitlements',
+                        'expires_at',
+                        'UPDATE'
+                    ) AS entitlement_expiry_update,
+                    has_column_privilege(
+                        'nothing_payment',
+                        'payment_worker_checkpoints',
+                        'last_ledger_index',
+                        'UPDATE'
+                    ) AS checkpoint_ledger_update,
+                    has_column_privilege(
+                        'nothing_payment',
+                        'payment_worker_checkpoints',
+                        'account',
+                        'UPDATE'
+                    ) AS checkpoint_account_update
+                """
+            ).fetchone()
+        self.assertTrue(row["invoice_status_update"])
+        self.assertFalse(row["invoice_quote_update"])
+        self.assertTrue(row["payment_finality_update"])
+        self.assertFalse(row["payment_amount_update"])
+        self.assertTrue(row["entitlement_status_update"])
+        self.assertFalse(row["entitlement_expiry_update"])
+        self.assertTrue(row["checkpoint_ledger_update"])
+        self.assertFalse(row["checkpoint_account_update"])
+
+    def test_payment_worker_checkpoint_guard_is_database_enforced(self):
+        worker = "checkpoint-db-guard"
+        account = "r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2"
+        self.store.set_payment_worker_checkpoint(
+            worker,
+            account,
+            last_tx_hash="TX-200",
+            last_ledger_index=200,
+        )
+        with self.store._pool.connection() as connection:
+            with self.assertRaises(Exception) as context:
+                connection.execute(
+                    """
+                    UPDATE payment_worker_checkpoints
+                    SET last_ledger_index = 199
+                    WHERE worker_name = %s
+                    """,
+                    (worker,),
+                )
+            self.assertIn("checkpoint cannot move backwards", str(context.exception).lower())
+
     def test_readiness_fails_when_schema_version_is_behind(self):
         with self.store._pool.connection() as connection:
             connection.execute(
@@ -315,7 +400,7 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
             row = connection.execute(
                 "SELECT MAX(version) AS version FROM schema_migrations"
             ).fetchone()
-        self.assertEqual(row["version"], 11)
+        self.assertEqual(row["version"], 12)
 
         identity = self.store.get_identity("NTH-000001")
         self.assertEqual(identity.record["nothing_id"], "NTH-000001")
