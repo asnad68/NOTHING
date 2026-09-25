@@ -704,6 +704,13 @@ class SubscriptionBillingService:
         if entitlement is not None:
             return str(entitlement["entitlement_id"])
 
+        self.store._lock_keys(
+            connection,
+            [
+                f"entitlement:{invoice_model.customer_ref}:"
+                f"{invoice_model.plan_code}"
+            ],
+        )
         plan = connection.execute(
             """
             SELECT duration_seconds
