@@ -42,3 +42,20 @@ Before enabling automated settlement, define:
 10. audit trail for payment-to-subscription entitlement
 
 Until those controls exist, the safe mode is manual verification.
+
+
+## Payment engine status
+
+The repository now has a separate settlement domain and PostgreSQL billing boundary in PAYMENT-SUBSCRIPTION-ARCHITECTURE.md.
+
+The payment engine deliberately stops before live chain connectivity. It accepts only a trusted chain adapter observation and then performs database-controlled matching, allocation and entitlement activation.
+
+The following are not accepted as client authority:
+
+- confirmation count
+- finality status
+- transaction success
+- transferred amount
+- destination
+- token contract
+
