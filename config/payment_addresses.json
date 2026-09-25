@@ -29,6 +29,12 @@
     "display_addresses_publicly": true,
     "accept_payment_without_network_confirmation": false,
     "private_keys_in_repo": false,
-    "automatic_payment_confirmation": false
+    "automatic_payment_confirmation": true,
+    "automatic_settlement": {
+      "XRP": true,
+      "ETH": false,
+      "BTC": false,
+      "USDT": false
+    }
   }
 }
