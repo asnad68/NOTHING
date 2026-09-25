@@ -47,8 +47,11 @@
 - [x] Implement `GET /v1/identity/{nothing_id}`
 - [x] Implement claim/evidence/event/procedure resources
 - [x] Add end-to-end HTTP tests
-- [ ] Production deployment architecture
-- [ ] Production persistence and governance
+- [x] Define production deployment architecture
+- [x] Define production persistence and governance boundary
+- [x] Implement storage port and durable SQLite reference backend
+- [ ] Production PostgreSQL adapter and managed deployment
+- [ ] Authentication for future write operations
 - [ ] Authentication for future write operations
 
 ## Phase 5 — Pilot
