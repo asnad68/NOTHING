@@ -177,7 +177,9 @@ def main() -> None:
                     flush=True,
                 )
             except Exception as exc:
-                _heartbeat(heartbeat_file)
+                # Do not refresh the liveness heartbeat on a failed scan.
+                # Kubernetes will restart a worker that cannot observe XRPL
+                # successfully for the configured heartbeat window.
                 print(
                     '{"event":"xrpl_payment_scan_error","error_type":"%s"}'
                     % type(exc).__name__,
