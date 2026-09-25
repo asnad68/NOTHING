@@ -281,9 +281,11 @@ class XrplJsonRpcAdapter:
         success = validated and tx_result == "tesSUCCESS"
         destination = result.get("Destination")
         tag = result.get("DestinationTag")
-        amount_value = result.get("DeliverMax", result.get("Amount"))
-        if isinstance(amount_value, str):
-            amount = int(amount_value)
+        delivered = meta.get("delivered_amount")
+        if delivered is None:
+            delivered = meta.get("DeliveredAmount")
+        if isinstance(delivered, str):
+            amount = int(delivered)
         else:
             amount = 0
 
@@ -356,9 +358,12 @@ class XrplJsonRpcAdapter:
             destination = tx.get("Destination")
             if destination != account:
                 continue
-            amount_value = tx.get("DeliverMax", tx.get("Amount"))
-            if not isinstance(amount_value, str):
+            delivered = meta.get("delivered_amount")
+            if delivered is None:
+                delivered = meta.get("DeliveredAmount")
+            if not isinstance(delivered, str):
                 continue
+            amount_value = delivered
             tag = tx.get("DestinationTag")
             observations.append(
                 PaymentObservation(
