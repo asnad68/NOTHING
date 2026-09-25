@@ -87,6 +87,22 @@ class SubscriptionBillingService:
 
         expires_utc = expires_at.astimezone(timezone.utc)
 
+        if settlement_routing_mode not in {
+            None, "unique_destination", "xrp_destination_tag", "manual_shared"
+        }:
+            raise PaymentValidationError("invalid settlement_routing_mode")
+
+        if settlement_routing_mode == "unique_destination":
+            if not settlement_destination:
+                raise PaymentValidationError(
+                    "unique_destination requires an invoice-specific destination"
+                )
+        if settlement_routing_mode == "xrp_destination_tag":
+            if not settlement_routing_reference:
+                raise PaymentValidationError(
+                    "xrp_destination_tag requires an invoice-specific tag"
+                )
+
         with self.store._transaction(retryable=True) as connection:
             self.store._lock_keys(
                 connection,
@@ -107,6 +123,9 @@ class SubscriptionBillingService:
                 if (
                     quote.get("plan_code") != plan_code
                     or quote.get("price_id") != price_id
+                    or quote.get("settlement_destination") != settlement_destination
+                    or quote.get("routing_mode") != settlement_routing_mode
+                    or quote.get("routing_reference") != settlement_routing_reference
                 ):
                     raise ConflictError(
                         "invoice idempotency key was already used for a different quote"
@@ -158,7 +177,7 @@ class SubscriptionBillingService:
                 "asset_contract": price["asset_contract"],
                 "amount_atomic": str(price["amount_atomic"]),
                 "asset_decimals": int(price["asset_decimals"]),
-                "destination": price["destination"],
+                "destination": settlement_destination or price["destination"],
                 "expires_at": expires_utc.isoformat(),
                 "routing_mode": (
                     settlement_routing_mode or price["routing_mode"]
@@ -193,7 +212,7 @@ class SubscriptionBillingService:
                     price["asset_contract"],
                     price["amount_atomic"],
                     price["asset_decimals"],
-                    price["destination"],
+                    settlement_destination or price["destination"],
                     client_idempotency_key,
                     expires_utc,
                     _canonical_json(quote),
@@ -218,9 +237,11 @@ class SubscriptionBillingService:
                 asset_kind=price["asset_kind"],
                 amount_atomic=int(price["amount_atomic"]),
                 asset_decimals=int(price["asset_decimals"]),
-                destination=price["destination"],
+                destination=settlement_destination or price["destination"],
                 expires_at=expires_utc,
                 asset_contract=price["asset_contract"],
+                routing_mode=settlement_routing_mode or price["routing_mode"],
+                routing_reference=settlement_routing_reference,
             )
 
     def settle_observation(
