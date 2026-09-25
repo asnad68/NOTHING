@@ -13,6 +13,7 @@ const recordRevocation = $("#record-revocation");
 const claims = $("#claims");
 const verification = $("#verification");
 const evidence = $("#evidence");
+const timeline = $("#timeline");
 const meta = $("#meta");
 
 function clear(node) {
@@ -103,6 +104,37 @@ function renderEvidence(data) {
   }
 }
 
+function renderTimeline(events) {
+  clear(timeline);
+  if (!events.length) {
+    text(timeline, "No verification events are recorded.", "item-muted");
+    return;
+  }
+  const ordered = [...events].sort(
+    (a, b) => String(b.occurred_at).localeCompare(String(a.occurred_at))
+  );
+  for (const event of ordered) {
+    const item = document.createElement("div");
+    item.className = "item";
+    text(item, event.result?.status || "UNKNOWN", "item-title");
+    text(item, `${event.occurred_at} · ${event.id}`, "item-muted");
+    text(item, `Claim: ${event.claim_id}`, "item-muted");
+    text(
+      item,
+      `Procedure: ${event.procedure?.id || "unknown"} v${event.procedure?.version || "?"}`,
+      "item-muted"
+    );
+    if (event.supersedes) {
+      text(item, `Supersedes: ${event.supersedes}`, "item-muted");
+    }
+    const chipRow = document.createElement("div");
+    chipRow.className = "chip-row";
+    for (const id of event.evidence || []) text(chipRow, id, "chip");
+    item.appendChild(chipRow);
+    timeline.appendChild(item);
+  }
+}
+
 function renderRecord(payload) {
   const data = payload.data;
   record.hidden = false;
@@ -117,15 +149,11 @@ function renderRecord(payload) {
   meta.textContent = `API v${payload.meta?.api_version || "?"} · Protocol ${payload.meta?.protocol_version || "?"}`;
 }
 
-async function fetchIdentity(id) {
-  const response = await fetch(
-    `${API_BASE}/v1/identity/${encodeURIComponent(id)}`,
-    {
-      headers: { Accept: "application/json" },
-      cache: "no-store"
-    }
-  );
-
+async function fetchJson(path) {
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: { Accept: "application/json" },
+    cache: "no-store"
+  });
   if (!response.ok) {
     let message = `HTTP ${response.status}`;
     try {
@@ -137,6 +165,16 @@ async function fetchIdentity(id) {
     throw error;
   }
   return response.json();
+}
+
+async function fetchIdentity(id) {
+  return fetchJson(`/v1/identity/${encodeURIComponent(id)}`);
+}
+
+async function fetchVerificationEvents(id) {
+  return fetchJson(
+    `/v1/identity/${encodeURIComponent(id)}/verification-events`
+  );
 }
 
 form.addEventListener("submit", async (event) => {
@@ -153,11 +191,15 @@ form.addEventListener("submit", async (event) => {
   setStatus("Resolving", `Looking up ${id}…`);
 
   try {
-    const payload = await fetchIdentity(id);
+    const [payload, eventPayload] = await Promise.all([
+      fetchIdentity(id),
+      fetchVerificationEvents(id),
+    ]);
     renderRecord(payload);
+    renderTimeline(eventPayload.data.events || []);
     setStatus(
       "Resolved",
-      "The record below reflects the API's current resolved graph."
+      "The record below reflects the API's current resolved graph and event history."
     );
   } catch (error) {
     const detail = error.status === 404
