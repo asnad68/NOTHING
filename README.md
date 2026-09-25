@@ -383,34 +383,63 @@ The project should earn trust through transparent verification rather than throu
 
 ## Technical Repository Structure
 
-The prototype is now organized around a small, explicit technical foundation:
+The prototype now has a deliberately separated foundation for identity, evidence, verification events and verification procedures:
 
 ```text
 NOTHING/
 ├── schema/
-│   └── identity.schema.json
+│   ├── identity.schema.json
+│   ├── evidence.schema.json
+│   ├── verification-event.schema.json
+│   ├── procedure.schema.json
+│   └── procedure-registry.schema.json
+├── procedures/
+│   └── registry.json
 ├── examples/
-│   └── NTH-000001.json
+│   ├── NTH-000001.json
+│   ├── EVD-000001.json
+│   └── VER-000001.json
+├── src/
+│   ├── nothing_verify.py
+│   └── nothing_protocol.py
 ├── docs/
 │   ├── ARCHITECTURE.md
 │   ├── VERIFICATION.md
+│   ├── VERIFICATION-PROTOCOL.md
+│   ├── EVIDENCE-MODEL.md
+│   ├── VERIFICATION-EVENT-MODEL.md
+│   ├── IDENTITY-EVIDENCE-RELATIONSHIP.md
+│   ├── SCHEMA-PARITY.md
+│   ├── RELATIONSHIP-RESOLUTION.md
+│   ├── PROCEDURE-REGISTRY.md
+│   ├── THREAT-MODEL.md
 │   └── ROADMAP.md
 ├── tests/
-│   └── fixtures/
-│       ├── valid-identity.json
-│       └── invalid-identity.json
+│   ├── fixtures/
+│   ├── test_identity.py
+│   ├── test_schema_parity.py
+│   └── test_protocol.py
+├── requirements-dev.txt
 └── SECURITY.md
 ```
 
-The machine-readable schema is the contract for the first identity-record prototype. Example and test fixtures are intentionally separated from the schema so future verification code can validate independent records without changing the core contract.
+The architecture deliberately separates:
 
-The technical roadmap will add application code only after the identity model and verification semantics are sufficiently stable.
+```text
+Identity
+   ↓
+Claim
+   ↓
+Evidence
+   ↓
+Verification Event
+   ↓
+Versioned Procedure
+```
 
-
+The repository does not collapse these layers into a universal trust score.
 
 ### Local Prototype Validation
-
-The repository now contains a dependency-free Python validator for the v0.1 identity model.
 
 From the repository root:
 
@@ -424,7 +453,21 @@ A single identity record can also be checked directly:
 python src/nothing_verify.py examples/NTH-000001.json
 ```
 
-The validator checks structural rules only. It does **not** independently establish the truth of external evidence.
+The structural validator checks data contracts only. The protocol resolver checks cross-record relationships and procedure compatibility. Neither one independently proves that an external source is truthful.
+
+### Schema Parity
+
+Development dependencies are pinned in requirements-dev.txt.
+
+The test suite validates the JSON Schema documents using Draft 2020-12, then checks that representative valid and invalid records produce matching results in the JSON Schema validator and the custom structural validators.
+
+### Protocol Resolution
+
+The resolver can assemble:
+
+Identity + Evidence + Verification Events + Procedure Registry
+
+and verify referential integrity, procedure/result compatibility, procedure lifecycle timing and verification-event supersession rules.
 
 ---
 
@@ -459,6 +502,6 @@ Before commercial deployment, the project will require jurisdiction-specific leg
 
 ## Engineering Guardrails
 
-The project now has an automated test workflow, a deterministic validator, a threat model and a draft verification protocol. These are intentionally conservative foundations: technical validity is kept separate from evidence-based verification.
+The project now has an automated test workflow, a deterministic structural validator, JSON Schema parity tests, a cross-record protocol resolver, a versioned verification procedure registry, a threat model and an explicit verification protocol. These are intentionally conservative foundations: technical validity is kept separate from evidence-based verification.
 
 The next implementation work should preserve backward compatibility of the v0.1 identity contract. Breaking schema changes should use an explicit version rather than silently changing the meaning of existing records.
