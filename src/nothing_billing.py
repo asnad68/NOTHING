@@ -303,6 +303,137 @@ class SubscriptionBillingService:
                 routing_reference=effective_routing_reference,
             )
 
+    def _upsert_payment_event(
+        self,
+        connection: Any,
+        observation: PaymentObservation,
+    ) -> uuid.UUID:
+        payment = connection.execute(
+            """
+            SELECT *
+            FROM payment_events
+            WHERE network = %s
+              AND chain_event_key = %s
+            FOR UPDATE
+            """,
+            (observation.network, observation.chain_event_key),
+        ).fetchone()
+
+        if payment is None:
+            payment_event_id = uuid.uuid4()
+            connection.execute(
+                """
+                INSERT INTO payment_events(
+                    payment_event_id, network, asset_code, asset_kind,
+                    asset_contract, destination, amount_atomic,
+                    chain_event_key, tx_hash, block_reference,
+                    confirmation_count, finality_status, success,
+                    source, first_observed_at, last_observed_at,
+                    routing_mode, routing_reference
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s
+                )
+                """,
+                (
+                    payment_event_id,
+                    observation.network,
+                    observation.asset_code,
+                    observation.asset_kind,
+                    observation.asset_contract,
+                    observation.destination,
+                    observation.amount_atomic,
+                    observation.chain_event_key,
+                    observation.tx_hash,
+                    observation.block_reference,
+                    observation.confirmation_count,
+                    observation.finality_status,
+                    observation.success,
+                    observation.source,
+                    observation.observed_at,
+                    observation.observed_at,
+                    observation.routing_mode,
+                    observation.routing_reference,
+                ),
+            )
+            return payment_event_id
+
+        immutable_fields = (
+            ("asset_code", payment["asset_code"], observation.asset_code),
+            ("asset_kind", payment["asset_kind"], observation.asset_kind),
+            ("asset_contract", payment["asset_contract"], observation.asset_contract),
+            ("destination", payment["destination"], observation.destination),
+            ("amount_atomic", int(payment["amount_atomic"]), observation.amount_atomic),
+            ("tx_hash", payment["tx_hash"], observation.tx_hash),
+            ("routing_mode", payment["routing_mode"], observation.routing_mode),
+            ("routing_reference", payment["routing_reference"], observation.routing_reference),
+        )
+        for field, old, new in immutable_fields:
+            if old != new:
+                raise ConflictError(
+                    f"payment event identity changed for {field}"
+                )
+
+        finality_rank = {
+            "pending": 0,
+            "confirmed": 1,
+            "final": 2,
+        }
+        stored_finality = payment["finality_status"]
+        observed_finality = observation.finality_status
+
+        if stored_finality == "final":
+            if observed_finality == "orphaned":
+                raise ConflictError(
+                    "a finalized payment cannot be silently changed to orphaned"
+                )
+            effective_finality = "final"
+        elif stored_finality == "orphaned":
+            if observed_finality != "orphaned":
+                raise ConflictError(
+                    "an orphaned payment requires explicit reconciliation before revival"
+                )
+            effective_finality = "orphaned"
+        elif observed_finality == "orphaned":
+            effective_finality = "orphaned"
+        else:
+            effective_finality = (
+                observed_finality
+                if finality_rank[observed_finality] >= finality_rank[stored_finality]
+                else stored_finality
+            )
+
+        effective_success = (
+            False
+            if effective_finality == "orphaned"
+            else bool(payment["success"] or observation.success)
+        )
+
+        connection.execute(
+            """
+            UPDATE payment_events
+            SET block_reference = COALESCE(%s, block_reference),
+                confirmation_count = GREATEST(
+                    confirmation_count, %s
+                ),
+                finality_status = %s,
+                success = %s,
+                source = %s,
+                last_observed_at = %s
+            WHERE payment_event_id = %s
+            """,
+            (
+                observation.block_reference,
+                observation.confirmation_count,
+                effective_finality,
+                effective_success,
+                observation.source,
+                observation.observed_at,
+                payment["payment_event_id"],
+            ),
+        )
+        return payment["payment_event_id"]
+
     def settle_observation(
         self,
         *,
@@ -325,131 +456,10 @@ class SubscriptionBillingService:
                 ],
             )
 
-            payment = connection.execute(
-                """
-                SELECT *
-                FROM payment_events
-                WHERE network = %s
-                  AND chain_event_key = %s
-                FOR UPDATE
-                """,
-                (observation.network, observation.chain_event_key),
-            ).fetchone()
-
-            if payment is None:
-                payment_event_id = uuid.uuid4()
-                connection.execute(
-                    """
-                    INSERT INTO payment_events(
-                        payment_event_id, network, asset_code, asset_kind,
-                        asset_contract, destination, amount_atomic,
-                        chain_event_key, tx_hash, block_reference,
-                        confirmation_count, finality_status, success,
-                        source, first_observed_at, last_observed_at,
-                        routing_mode, routing_reference
-                    ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s, %s
-                    )
-                    """,
-                    (
-                        payment_event_id,
-                        observation.network,
-                        observation.asset_code,
-                        observation.asset_kind,
-                        observation.asset_contract,
-                        observation.destination,
-                        observation.amount_atomic,
-                        observation.chain_event_key,
-                        observation.tx_hash,
-                        observation.block_reference,
-                        observation.confirmation_count,
-                        observation.finality_status,
-                        observation.success,
-                        observation.source,
-                        observation.observed_at,
-                        observation.observed_at,
-                        observation.routing_mode,
-                        observation.routing_reference,
-                    ),
-                )
-            else:
-                immutable_fields = (
-                    ("asset_code", payment["asset_code"], observation.asset_code),
-                    ("asset_kind", payment["asset_kind"], observation.asset_kind),
-                    ("asset_contract", payment["asset_contract"], observation.asset_contract),
-                    ("destination", payment["destination"], observation.destination),
-                    ("amount_atomic", int(payment["amount_atomic"]), observation.amount_atomic),
-                    ("tx_hash", payment["tx_hash"], observation.tx_hash),
-                    ("routing_mode", payment["routing_mode"], observation.routing_mode),
-                    ("routing_reference", payment["routing_reference"], observation.routing_reference),
-                )
-                for field, old, new in immutable_fields:
-                    if old != new:
-                        raise ConflictError(
-                            f"payment event identity changed for {field}"
-                        )
-                payment_event_id = payment["payment_event_id"]
-
-                finality_rank = {
-                    "pending": 0,
-                    "confirmed": 1,
-                    "final": 2,
-                }
-                stored_finality = payment["finality_status"]
-                observed_finality = observation.finality_status
-
-                if stored_finality == "final":
-                    if observed_finality == "orphaned":
-                        raise ConflictError(
-                            "a finalized payment cannot be silently changed to orphaned"
-                        )
-                    effective_finality = "final"
-                elif stored_finality == "orphaned":
-                    if observed_finality != "orphaned":
-                        raise ConflictError(
-                            "an orphaned payment requires explicit reconciliation before revival"
-                        )
-                    effective_finality = "orphaned"
-                elif observed_finality == "orphaned":
-                    effective_finality = "orphaned"
-                else:
-                    effective_finality = (
-                        observed_finality
-                        if finality_rank[observed_finality] >= finality_rank[stored_finality]
-                        else stored_finality
-                    )
-
-                effective_success = (
-                    False
-                    if effective_finality == "orphaned"
-                    else bool(payment["success"] or observation.success)
-                )
-
-                connection.execute(
-                    """
-                    UPDATE payment_events
-                    SET block_reference = COALESCE(%s, block_reference),
-                        confirmation_count = GREATEST(
-                            confirmation_count, %s
-                        ),
-                        finality_status = %s,
-                        success = %s,
-                        source = %s,
-                        last_observed_at = %s
-                    WHERE payment_event_id = %s
-                    """,
-                    (
-                        observation.block_reference,
-                        observation.confirmation_count,
-                        effective_finality,
-                        effective_success,
-                        observation.source,
-                        observation.observed_at,
-                        payment_event_id,
-                    ),
-                )
-
+            payment_event_id = self._upsert_payment_event(
+                connection,
+                observation,
+            )
             invoice = connection.execute(
                 """
                 SELECT *
@@ -796,6 +806,45 @@ class SubscriptionBillingService:
             ),
         )
 
+
+    def record_unmatched_observation(
+        self,
+        *,
+        observation: PaymentObservation,
+        actor: str,
+    ) -> None:
+        """Persist a trusted payment that could not be matched to an invoice."""
+        validate_observation(observation)
+        if not actor.strip():
+            raise PaymentValidationError("actor is required")
+        self.policy_for(observation.network)
+
+        with self.store._transaction(retryable=True) as connection:
+            self.store._lock_keys(
+                connection,
+                [
+                    f"payment:{observation.network}:"
+                    f"{observation.chain_event_key}"
+                ],
+            )
+            payment_event_id = self._upsert_payment_event(
+                connection,
+                observation,
+            )
+            self._billing_audit(
+                connection,
+                actor,
+                "PAYMENT_UNMATCHED",
+                "payment_event",
+                str(payment_event_id),
+                {
+                    "network": observation.network,
+                    "tx_hash": observation.tx_hash,
+                    "destination": observation.destination,
+                    "routing_mode": observation.routing_mode,
+                    "routing_reference": observation.routing_reference,
+                },
+            )
 
     def settle_discovered_observation(
         self,
