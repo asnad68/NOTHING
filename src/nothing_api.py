@@ -280,7 +280,8 @@ class NothingApiHandler(BaseHTTPRequestHandler):
             "public, max-age=60" if allow_cache else "no-store",
         )
         self.send_header("Referrer-Policy", "no-referrer")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        if getattr(self, "_cors_allowed", True):
+            self.send_header("Access-Control-Allow-Origin", "*")
         if etag:
             self.send_header("ETag", etag)
         if last_modified:
@@ -385,6 +386,7 @@ class NothingApiHandler(BaseHTTPRequestHandler):
 
 
     def _post_ingestion_bundle(self) -> None:
+        self._cors_allowed = False
         if not self.ingestion_authenticator.configured:
             self._send_problem(
                 503,
