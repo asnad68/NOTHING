@@ -59,3 +59,5 @@ Optional authentication controls:
 - `NOTHING_AUTH_JWKS_TIMEOUT_SECONDS`
 
 The PostgreSQL adapter uses a bounded connection pool and serializable write transactions with deterministic advisory locking and whole-operation retry on serialization failure/deadlock.
+
+Proxy headers: `X-Forwarded-For` is ignored by default. Set `NOTHING_TRUST_PROXY_HEADERS=true` only when a trusted gateway overwrites that header and the network boundary prevents direct client access to the application.
