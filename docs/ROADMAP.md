@@ -37,13 +37,19 @@
 - [ ] Add human-readable Nothing Mark
 
 ## Phase 4 — API
-- [ ] Define resource model from resolved protocol graph
-- [ ] Implement `GET /v1/identity/{nothing_id}`
-- [ ] Implement claim/evidence/event/procedure resources
-- [ ] Define API error model
-- [ ] Define content types and versioning
-- [ ] Add rate limiting and abuse controls
-- [ ] Define cache and freshness semantics
+- [x] Define resource model from resolved protocol graph
+- [x] Define API error model
+- [x] Define content types and versioning
+- [x] Define cache and freshness semantics
+- [x] Define rate limiting and abuse-control baseline
+- [x] Write deployment-neutral OpenAPI contract
+- [x] Implement reference read-only API server
+- [x] Implement `GET /v1/identity/{nothing_id}`
+- [x] Implement claim/evidence/event/procedure resources
+- [x] Add end-to-end HTTP tests
+- [ ] Production deployment architecture
+- [ ] Production persistence and governance
+- [ ] Authentication for future write operations
 
 ## Phase 5 — Pilot
 - [ ] Create a controlled pilot dataset
