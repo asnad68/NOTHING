@@ -1,0 +1,31 @@
+{
+  "version": "0.1",
+  "status": "manual-crypto-receiving",
+  "warning": "These are public receiving addresses. Never store private keys, seed phrases, signing secrets, or exchange API secrets in this repository.",
+  "assets": {
+    "XRP": {
+      "network": "XRPL",
+      "address": "r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2"
+    },
+    "USDT": {
+      "network": null,
+      "address": "0xE1c90171271B5325beE02592ACc50A510448d03E",
+      "enabled": false,
+      "activation_required": "Set the exact settlement network before accepting USDT payments."
+    },
+    "ETH": {
+      "network": "Ethereum",
+      "address": "0xE1c90171271B5325beE02592ACc50A510448d03E"
+    },
+    "BTC": {
+      "network": "Bitcoin",
+      "address": "3ABUrDAmi6w9TRsHuwFgdcDBLvXUzbAfZY"
+    }
+  },
+  "payment_rules": {
+    "display_addresses_publicly": true,
+    "accept_payment_without_network_confirmation": false,
+    "private_keys_in_repo": false,
+    "automatic_payment_confirmation": false
+  }
+}
