@@ -46,7 +46,7 @@ from src.nothing_verify import (
     validate_verification_event,
 )
 
-STORAGE_SCHEMA_VERSION = 11
+STORAGE_SCHEMA_VERSION = 12
 DEFAULT_POOL_MIN_SIZE = 2
 DEFAULT_POOL_MAX_SIZE = 10
 DEFAULT_POOL_TIMEOUT_SECONDS = 10
@@ -329,8 +329,7 @@ class PostgreSQLNothingStore:
                     worker_name, account, last_tx_hash, last_ledger_index
                 ) VALUES (%s, %s, %s, %s)
                 ON CONFLICT (worker_name) DO UPDATE
-                SET account = EXCLUDED.account,
-                    last_tx_hash = EXCLUDED.last_tx_hash,
+                SET last_tx_hash = EXCLUDED.last_tx_hash,
                     last_ledger_index = EXCLUDED.last_ledger_index,
                     updated_at = NOW()
                 """,
