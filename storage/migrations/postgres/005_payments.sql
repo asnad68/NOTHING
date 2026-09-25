@@ -158,7 +158,7 @@ FOR EACH ROW EXECUTE FUNCTION nothing_billing_immutable_guard();
 CREATE OR REPLACE FUNCTION nothing_billing_invoice_guard()
 RETURNS TRIGGER
 LANGUAGE plpgsql
-AS $
+AS $$
 BEGIN
     IF NEW.customer_ref <> OLD.customer_ref
        OR NEW.plan_code <> OLD.plan_code
@@ -177,7 +177,7 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$;
+$$;
 
 DROP TRIGGER IF EXISTS billing_invoices_quote_guard ON billing_invoices;
 CREATE TRIGGER billing_invoices_quote_guard
@@ -187,7 +187,7 @@ FOR EACH ROW EXECUTE FUNCTION nothing_billing_invoice_guard();
 CREATE OR REPLACE FUNCTION nothing_billing_payment_guard()
 RETURNS TRIGGER
 LANGUAGE plpgsql
-AS $
+AS $$
 BEGIN
     IF NEW.network <> OLD.network
        OR NEW.chain_event_key <> OLD.chain_event_key
@@ -203,7 +203,7 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$;
+$$;
 
 DROP TRIGGER IF EXISTS payment_events_identity_guard ON payment_events;
 CREATE TRIGGER payment_events_identity_guard
@@ -213,7 +213,7 @@ FOR EACH ROW EXECUTE FUNCTION nothing_billing_payment_guard();
 CREATE OR REPLACE FUNCTION nothing_billing_entitlement_guard()
 RETURNS TRIGGER
 LANGUAGE plpgsql
-AS $
+AS $$
 BEGIN
     IF NEW.invoice_id <> OLD.invoice_id
        OR NEW.customer_ref <> OLD.customer_ref
@@ -225,7 +225,7 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$;
+$$;
 
 DROP TRIGGER IF EXISTS subscription_entitlements_identity_guard ON subscription_entitlements;
 CREATE TRIGGER subscription_entitlements_identity_guard
