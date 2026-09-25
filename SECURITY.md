@@ -25,3 +25,18 @@ The project follows these design goals:
 - dependency and supply-chain awareness
 
 Never commit passwords, API keys, private keys, access tokens, or other secrets to this repository.
+
+
+## Persistence safeguards
+
+The durable reference storage layer is designed around historical integrity:
+
+- identity revisions are append-only
+- Evidence, Verification Events and Procedure versions are immutable
+- write paths use transactions and referential checks
+- stored payloads receive deterministic SHA-256 hashes
+- the audit log is append-only
+
+Local database files, backups and production credentials must never be committed to the repository.
+
+Production deployment still requires managed secret storage, encrypted backups, access control, network protection, centralized audit logging, restore testing and a reviewed data-retention/deletion policy.
