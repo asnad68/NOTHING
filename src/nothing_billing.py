@@ -391,18 +391,45 @@ class SubscriptionBillingService:
                         )
                 payment_event_id = payment["payment_event_id"]
 
-                if (
-                    payment["finality_status"] == "final"
-                    and observation.finality_status == "orphaned"
-                ):
-                    raise ConflictError(
-                        "a finalized payment cannot be silently changed to orphaned"
+                finality_rank = {
+                    "pending": 0,
+                    "confirmed": 1,
+                    "final": 2,
+                }
+                stored_finality = payment["finality_status"]
+                observed_finality = observation.finality_status
+
+                if stored_finality == "final":
+                    if observed_finality == "orphaned":
+                        raise ConflictError(
+                            "a finalized payment cannot be silently changed to orphaned"
+                        )
+                    effective_finality = "final"
+                elif stored_finality == "orphaned":
+                    if observed_finality != "orphaned":
+                        raise ConflictError(
+                            "an orphaned payment requires explicit reconciliation before revival"
+                        )
+                    effective_finality = "orphaned"
+                elif observed_finality == "orphaned":
+                    effective_finality = "orphaned"
+                else:
+                    effective_finality = (
+                        observed_finality
+                        if finality_rank[observed_finality] >= finality_rank[stored_finality]
+                        else stored_finality
                     )
+
+                effective_success = (
+                    False
+                    if effective_finality == "orphaned"
+                    else bool(payment["success"] or observation.success)
+                )
 
                 connection.execute(
                     """
                     UPDATE payment_events
-                    SET block_reference = %s,
+                    SET block_reference = COALESCE(%s, block_reference),
                         confirmation_count = GREATEST(
                             confirmation_count, %s
                         ),
@@ -415,8 +442,8 @@ class SubscriptionBillingService:
                     (
                         observation.block_reference,
                         observation.confirmation_count,
-                        observation.finality_status,
-                        observation.success,
+                        effective_finality,
+                        effective_success,
                         observation.source,
                         observation.observed_at,
                         payment_event_id,
@@ -486,23 +513,35 @@ class SubscriptionBillingService:
                 )
                 return self._settlement_snapshot(connection, invoice_id)
 
+            persisted_payment = connection.execute(
+                """
+                SELECT *
+                FROM payment_events
+                WHERE payment_event_id = %s
+                FOR UPDATE
+                """,
+                (payment_event_id,),
+            ).fetchone()
+            if persisted_payment is None:
+                raise StoreError("payment event disappeared during settlement")
+
             current_observation = PaymentObservation(
-                network=observation.network,
-                asset_code=observation.asset_code,
-                asset_kind=observation.asset_kind,
-                destination=observation.destination,
-                amount_atomic=observation.amount_atomic,
-                chain_event_key=observation.chain_event_key,
-                tx_hash=observation.tx_hash,
-                block_reference=observation.block_reference,
-                confirmation_count=observation.confirmation_count,
-                finality_status=observation.finality_status,
-                success=observation.success,
-                observed_at=observation.observed_at,
-                source=observation.source,
-                asset_contract=observation.asset_contract,
-                routing_mode=observation.routing_mode,
-                routing_reference=observation.routing_reference,
+                network=persisted_payment["network"],
+                asset_code=persisted_payment["asset_code"],
+                asset_kind=persisted_payment["asset_kind"],
+                destination=persisted_payment["destination"],
+                amount_atomic=int(persisted_payment["amount_atomic"]),
+                chain_event_key=persisted_payment["chain_event_key"],
+                tx_hash=persisted_payment["tx_hash"],
+                block_reference=persisted_payment["block_reference"],
+                confirmation_count=int(persisted_payment["confirmation_count"]),
+                finality_status=persisted_payment["finality_status"],
+                success=bool(persisted_payment["success"]),
+                observed_at=persisted_payment["last_observed_at"],
+                source=persisted_payment["source"],
+                asset_contract=persisted_payment["asset_contract"],
+                routing_mode=persisted_payment["routing_mode"],
+                routing_reference=persisted_payment["routing_reference"],
             )
 
             decision = classify_invoice(
