@@ -29,7 +29,7 @@ The gateway owns the public TLS certificate, request-size policy, distributed ra
 
 ## Secrets
 
-Populate `NOTHING_POSTGRES_DSN`, `NOTHING_AUTH_ISSUER`, `NOTHING_AUTH_AUDIENCE` and `NOTHING_AUTH_JWKS_URI` from the deployment platform's secret/configuration system.
+Populate `NOTHING_POSTGRES_DSN`, `NOTHING_AUTH_ISSUER`, `NOTHING_AUTH_AUDIENCE` and `NOTHING_AUTH_JWKS_URI` from the deployment platform's secret/configuration system. The API also expects the configured `nothing:billing` permission for customer billing operations.
 
 Do not commit a Secret manifest containing credentials.
 
@@ -37,7 +37,7 @@ Secret lifecycle must support creation, access audit, rotation and revocation. T
 
 ## Authentication
 
-Use the production OIDC/JWT mode only. The issuer, audience and JWKS URI are pinned by configuration. The required scope is `nothing:ingest`.
+Use the production OIDC/JWT mode only. The issuer, audience and JWKS URI are pinned by configuration. The ingestion scope is `nothing:ingest`; billing uses the separate `nothing:billing` scope.
 
 The identity provider is an external managed dependency. Its tenant/client registration, signing-key rotation and emergency revocation procedure must be operated outside this repository.
 
@@ -56,6 +56,20 @@ The gateway must enforce:
 - access logs
 - upstream health checks
 - no direct public database access
+
+
+## Payment processing components
+
+The payment boundary is split into three processes:
+
+- `nothing-api`: authenticated customer billing API and public verification API
+- `nothing-xrpl-worker`: receive-only XRPL observation and settlement worker
+- `nothing-billing-maintenance`: scheduled invoice-expiration maintenance
+
+The XRPL worker and maintenance job use `nothing-payment-worker-secrets`, which
+must contain only the database connection required by their role. No signing
+key is required because the repository never creates or sends blockchain
+transactions.
 
 ## Observability
 
