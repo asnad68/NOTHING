@@ -51,10 +51,10 @@ Future production work must additionally address:
 
 ## GitHub Pages
 
-The repository includes a custom GitHub Actions deployment workflow using the standard Pages deployment actions. GitHub documents custom workflow deployment through `configure-pages`, the Pages artifact upload action and `deploy-pages`. citeturn444623search0turn444623search1
+The repository includes a custom GitHub Actions deployment workflow using the standard Pages deployment actions. GitHub documents custom workflow deployment through `configure-pages`, the Pages artifact upload action and `deploy-pages`.
 
 For a project repository, the expected default Pages URL is:
 
 `https://asnad68.github.io/NOTHING/`
 
-The repository owner must ensure the Pages source is configured to use **GitHub Actions** in repository Settings → Pages. GitHub Pages supports static files and custom domains; server-side Python/ PHP is not required for this prototype. citeturn444623search10turn444623search2
+The repository owner must ensure the Pages source is configured to use **GitHub Actions** in repository Settings → Pages. GitHub Pages supports static files and custom domains; server-side Python or PHP is not required for this prototype.
