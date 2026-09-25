@@ -3,8 +3,8 @@
   "info": {
     "title": "NOTHING Verification API",
     "version": "1.0.0",
-    "summary": "Read-only API contract for NOTHING business identity verification.",
-    "description": "Deployment-neutral API contract for resolving a NOTHING identity into claims, evidence references, verification events and versioned procedures. The API does not turn structural validity into a universal trust score. The API layer is storage-agnostic and can run against the demo filesystem backend or durable persistence.\n\nProduction authenticated writes use JWT access tokens and scope authorization; local development may use the static bearer reference mode."
+    "summary": "NOTHING verification, authenticated ingestion and billing API",
+    "description": "Deployment-neutral API contract for resolving a NOTHING identity into claims, evidence references, verification events and versioned procedures. The API does not turn structural validity into a universal trust score. Production authenticated writes use JWT access tokens and scope authorization. Authenticated billing provides a customer-scoped price catalog, invoice creation and entitlement reads; settlement itself is performed by the receive-only payment observation pipeline and PostgreSQL billing core."
   },
   "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
   "paths": {
