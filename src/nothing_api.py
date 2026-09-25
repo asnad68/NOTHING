@@ -15,7 +15,7 @@ import sys
 import uuid
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from email.utils import formatdate
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -30,10 +30,16 @@ from src.nothing_auth import (
 )
 from src.nothing_ingestion import (
     BearerAuthenticator,
+    IDEMPOTENCY_KEY_RE,
     IngestionRequestError,
     INGESTION_MAX_BODY_BYTES,
     INGESTION_MAX_RECORDS,
     parse_ingestion_request,
+)
+from src.nothing_billing import (
+    ConfirmationPolicy,
+    PaymentValidationError,
+    SubscriptionBillingService,
 )
 from src.nothing_protocol import RelationshipError, resolve_claim_relationships
 from src.nothing_store import (
@@ -71,6 +77,18 @@ INGESTION_RATE_LIMIT_WINDOW_SECONDS = int(
 INGESTION_RATE_LIMIT_MAX_REQUESTS = int(
     os.getenv("NOTHING_INGESTION_RATE_LIMIT_MAX_REQUESTS", "30")
 )
+
+BILLING_MAX_BODY_BYTES = max(
+    1,
+    int(os.getenv("NOTHING_BILLING_MAX_BODY_BYTES", "65536")),
+)
+BILLING_DEFAULT_EXPIRY_SECONDS = 900
+BILLING_MIN_EXPIRY_SECONDS = 60
+BILLING_MAX_EXPIRY_SECONDS = 86400
+BILLING_SCOPE = os.getenv(
+    "NOTHING_BILLING_REQUIRED_SCOPE",
+    "nothing:billing",
+).strip()
 TRUST_PROXY_HEADERS = os.getenv(
     "NOTHING_TRUST_PROXY_HEADERS",
     "false",
@@ -238,12 +256,16 @@ class NothingHttpServer(ThreadingHTTPServer):
         *,
         store: NothingStore,
         owns_store: bool,
-        ingestion_authenticator: BearerAuthenticator,
+        ingestion_authenticator: Any,
+        billing_authenticator: Any | None,
+        billing_service: SubscriptionBillingService | None,
     ):
         super().__init__(server_address, handler_class)
         self.store = store
         self.owns_store = owns_store
         self.ingestion_authenticator = ingestion_authenticator
+        self.billing_authenticator = billing_authenticator
+        self.billing_service = billing_service
 
     def server_close(self) -> None:
         super().server_close()
@@ -262,6 +284,14 @@ class NothingApiHandler(BaseHTTPRequestHandler):
     @property
     def ingestion_authenticator(self) -> BearerAuthenticator:
         return self.server.ingestion_authenticator  # type: ignore[attr-defined]
+
+    @property
+    def billing_authenticator(self) -> Any | None:
+        return self.server.billing_authenticator  # type: ignore[attr-defined]
+
+    @property
+    def billing_service(self) -> SubscriptionBillingService | None:
+        return self.server.billing_service  # type: ignore[attr-defined]
 
     def _request_id(self) -> str:
         request_id = getattr(self, "_nothing_request_id", None)
@@ -396,6 +426,11 @@ class NothingApiHandler(BaseHTTPRequestHandler):
                 return
             self._post_ingestion_bundle()
             return
+        if path == "/v1/billing/invoices":
+            if not self._check_ingestion_rate_limit():
+                return
+            self._post_billing_invoice()
+            return
         self._method_not_allowed()
 
     def do_PUT(self) -> None:
@@ -422,6 +457,30 @@ class NothingApiHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return
 
+        if path == "/v1/billing/invoices":
+            self.send_response(204)
+            self.send_header("Allow", "POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+            self.send_header(
+                "Access-Control-Allow-Headers",
+                "Authorization, Content-Type, Idempotency-Key",
+            )
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+
+        if path == "/v1/billing/entitlements" or path.startswith("/v1/billing/invoices/"):
+            self.send_response(204)
+            self.send_header("Allow", "GET, OPTIONS")
+            self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+            self.send_header(
+                "Access-Control-Allow-Headers",
+                "Authorization, Content-Type",
+            )
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+
         self.send_response(204)
         self.send_header("Allow", "GET, OPTIONS")
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -433,6 +492,288 @@ class NothingApiHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
+
+    @staticmethod
+    def _parse_billing_request(body: bytes) -> dict[str, Any]:
+        def reject_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+            result: dict[str, Any] = {}
+            for key, value in pairs:
+                if key in result:
+                    raise ValueError(f"duplicate JSON property: {key}")
+                result[key] = value
+            return result
+
+        if len(body) > BILLING_MAX_BODY_BYTES:
+            raise OverflowError("billing request body exceeds configured limit")
+        try:
+            payload = json.loads(
+                body.decode("utf-8"),
+                object_pairs_hook=reject_duplicates,
+            )
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError("billing request must contain valid UTF-8 JSON") from exc
+
+        if not isinstance(payload, dict):
+            raise ValueError("billing request must be a JSON object")
+        if set(payload) - {"plan_code", "price_id", "expires_in_seconds"}:
+            raise ValueError("billing request contains unsupported properties")
+
+        plan_code = payload.get("plan_code")
+        price_id = payload.get("price_id")
+        expires_in = payload.get(
+            "expires_in_seconds",
+            BILLING_DEFAULT_EXPIRY_SECONDS,
+        )
+        if not isinstance(plan_code, str) or not 1 <= len(plan_code.strip()) <= 100:
+            raise ValueError("plan_code must be a non-empty string")
+        if not isinstance(price_id, str):
+            raise ValueError("price_id must be a UUID string")
+        try:
+            uuid.UUID(price_id)
+        except ValueError as exc:
+            raise ValueError("price_id must be a UUID string") from exc
+        if isinstance(expires_in, bool) or not isinstance(expires_in, int):
+            raise ValueError("expires_in_seconds must be an integer")
+        if not BILLING_MIN_EXPIRY_SECONDS <= expires_in <= BILLING_MAX_EXPIRY_SECONDS:
+            raise ValueError(
+                f"expires_in_seconds must be between {BILLING_MIN_EXPIRY_SECONDS} "
+                f"and {BILLING_MAX_EXPIRY_SECONDS}"
+            )
+        return {
+            "plan_code": plan_code.strip(),
+            "price_id": price_id,
+            "expires_in_seconds": expires_in,
+        }
+
+    def _billing_principal(self) -> AuthenticatedPrincipal | None:
+        self._cors_allowed = False
+        if self.billing_authenticator is None:
+            return None
+        principal = self.billing_authenticator.authenticate(
+            self.headers.get("Authorization")
+        )
+        if principal is None:
+            self._send_problem(
+                401,
+                "UNAUTHORIZED",
+                "A valid bearer access token is required for billing.",
+                extra_headers={
+                    "WWW-Authenticate": (
+                        'Bearer realm="NOTHING billing", '
+                        'error="invalid_token"'
+                    ),
+                },
+            )
+            return None
+        if not self.billing_authenticator.authorize(
+            principal,
+            BILLING_SCOPE,
+        ):
+            self._send_problem(
+                403,
+                "FORBIDDEN",
+                "The access token lacks the required billing permission.",
+            )
+            return None
+        return principal
+
+    def _post_billing_invoice(self) -> None:
+        if self.billing_service is None:
+            self._send_problem(
+                503,
+                "BILLING_UNAVAILABLE",
+                "Billing persistence is not configured for this deployment.",
+            )
+            return
+
+        principal = self._billing_principal()
+        if principal is None:
+            return
+
+        content_type = (self.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+        if content_type != "application/json":
+            self._send_problem(
+                415,
+                "UNSUPPORTED_MEDIA_TYPE",
+                "Content-Type must be application/json.",
+            )
+            return
+
+        content_length = self.headers.get("Content-Length")
+        if content_length is None:
+            self._send_problem(400, "CONTENT_LENGTH_REQUIRED", "Content-Length is required.")
+            return
+        try:
+            length = int(content_length)
+        except ValueError:
+            self._send_problem(400, "INVALID_CONTENT_LENGTH", "Content-Length must be a non-negative integer.")
+            return
+        if length < 0:
+            self._send_problem(400, "INVALID_CONTENT_LENGTH", "Content-Length must be a non-negative integer.")
+            return
+        if length > BILLING_MAX_BODY_BYTES:
+            self._send_problem(413, "PAYLOAD_TOO_LARGE", "The billing request body exceeds the configured size limit.")
+            return
+
+        body = self.rfile.read(length)
+        if len(body) != length:
+            self._send_problem(400, "INCOMPLETE_REQUEST", "The request body ended before Content-Length was satisfied.")
+            return
+
+        idempotency_key = self.headers.get("Idempotency-Key")
+        if idempotency_key is None or not IDEMPOTENCY_KEY_RE.fullmatch(idempotency_key):
+            self._send_problem(
+                400,
+                "IDEMPOTENCY_KEY_INVALID",
+                "A valid Idempotency-Key header is required.",
+            )
+            return
+
+        try:
+            request = self._parse_billing_request(body)
+            expires_at = datetime.now(timezone.utc) + timedelta(
+                seconds=request["expires_in_seconds"]
+            )
+            customer_ref = SubscriptionBillingService.customer_ref_for_actor(
+                principal.actor
+            )
+            invoice = self.billing_service.create_invoice(
+                customer_ref=customer_ref,
+                plan_code=request["plan_code"],
+                price_id=request["price_id"],
+                client_idempotency_key=idempotency_key,
+                expires_at=expires_at,
+                actor=principal.actor,
+            )
+        except OverflowError as exc:
+            self._send_problem(413, "PAYLOAD_TOO_LARGE", str(exc))
+            return
+        except (ValueError, PaymentValidationError) as exc:
+            self._send_problem(400, "INVALID_BILLING_REQUEST", str(exc))
+            return
+        except ConflictError as exc:
+            self._send_problem(409, "CONFLICT", str(exc))
+            return
+        except NotFoundError as exc:
+            self._send_problem(404, "NOT_FOUND", str(exc))
+            return
+        except StoreError:
+            self._send_problem(
+                503,
+                "BILLING_UNAVAILABLE",
+                "Billing persistence is temporarily unavailable.",
+            )
+            return
+
+        data = self._billing_invoice_view(invoice)
+        payload = {
+            "data": data,
+            "meta": _meta(
+                demo=self.store.demo,
+                generated_at=datetime.now(timezone.utc).isoformat(),
+            ),
+        }
+        self._send(
+            200,
+            payload,
+            allow_cache=False,
+            extra_headers={"Idempotent-Replay": "false"},
+        )
+
+    @staticmethod
+    def _billing_invoice_view(invoice: Any) -> dict[str, Any]:
+        amount_atomic = int(invoice["amount_atomic"])
+        decimals = int(invoice["asset_decimals"])
+        from decimal import Decimal
+        amount_display = format(
+            Decimal(amount_atomic).scaleb(-decimals),
+            "f",
+        )
+        return {
+            "invoice_id": invoice["invoice_id"],
+            "plan_code": invoice["plan_code"],
+            "asset_code": invoice["asset_code"],
+            "network": invoice["network"],
+            "asset_kind": invoice["asset_kind"],
+            "amount_atomic": str(amount_atomic),
+            "amount": amount_display,
+            "asset_decimals": decimals,
+            "destination": invoice["destination"],
+            "routing_mode": invoice["routing_mode"],
+            "routing_reference": invoice["routing_reference"],
+            "status": "open",
+            "expires_at": invoice["expires_at"],
+        }
+
+    def _get_billing_invoice(self, invoice_id: str, instance: str) -> None:
+        if self.billing_service is None:
+            self._send_problem(
+                503,
+                "BILLING_UNAVAILABLE",
+                "Billing persistence is not configured for this deployment.",
+                instance,
+            )
+            return
+        principal = self._billing_principal()
+        if principal is None:
+            return
+        try:
+            snapshot = self.billing_service.get_invoice(
+                invoice_id=invoice_id,
+                customer_ref=SubscriptionBillingService.customer_ref_for_actor(
+                    principal.actor
+                ),
+            )
+        except PaymentValidationError as exc:
+            self._send_problem(400, "INVALID_ID", str(exc), instance)
+            return
+        except NotFoundError:
+            self._send_problem(404, "NOT_FOUND", "The requested invoice does not exist.", instance)
+            return
+        except StoreError:
+            self._send_problem(503, "BILLING_UNAVAILABLE", "Billing persistence is temporarily unavailable.", instance)
+            return
+
+        self._send(
+            200,
+            {"data": snapshot, "meta": _meta(
+                demo=self.store.demo,
+                generated_at=datetime.now(timezone.utc).isoformat(),
+            )},
+            allow_cache=False,
+        )
+
+    def _get_billing_entitlements(self, instance: str) -> None:
+        if self.billing_service is None:
+            self._send_problem(
+                503,
+                "BILLING_UNAVAILABLE",
+                "Billing persistence is not configured for this deployment.",
+                instance,
+            )
+            return
+        principal = self._billing_principal()
+        if principal is None:
+            return
+        try:
+            entitlements = self.billing_service.list_entitlements(
+                customer_ref=SubscriptionBillingService.customer_ref_for_actor(
+                    principal.actor
+                ),
+                active_only=True,
+            )
+        except (PaymentValidationError, StoreError) as exc:
+            self._send_problem(503, "BILLING_UNAVAILABLE", str(exc), instance)
+            return
+
+        self._send(
+            200,
+            {"data": {"entitlements": entitlements}, "meta": _meta(
+                demo=self.store.demo,
+                generated_at=datetime.now(timezone.utc).isoformat(),
+            )},
+            allow_cache=False,
+        )
 
     def _post_ingestion_bundle(self) -> None:
         self._cors_allowed = False
@@ -647,6 +988,14 @@ class NothingApiHandler(BaseHTTPRequestHandler):
                 self._get_procedure(parts[2], parts[3], instance)
                 return
 
+            if len(parts) == 3 and parts[:2] == ["v1", "billing"] and parts[2] == "entitlements":
+                self._get_billing_entitlements(instance)
+                return
+
+            if len(parts) == 4 and parts[:2] == ["v1", "billing"] and parts[2] == "invoices":
+                self._get_billing_invoice(parts[3], instance)
+                return
+
             self._send_problem(
                 404,
                 "NOT_FOUND",
@@ -843,6 +1192,8 @@ def build_server(
     ingestion_token: str | None = None,
     ingestion_actor: str | None = None,
     auth_mode: str | None = None,
+    billing_authenticator: Any | None = None,
+    billing_service: SubscriptionBillingService | None = None,
 ) -> NothingHttpServer:
     owns_store = store is None
     selected_backend = storage_backend or DEFAULT_BACKEND
@@ -878,16 +1229,60 @@ def build_server(
 
     if selected_auth_mode == "oidc-jwt":
         ingestion_authenticator = OIDCJwtAuthenticator.from_environment()
+        if billing_authenticator is None:
+            billing_authenticator = OIDCJwtAuthenticator.from_environment(
+                required_scope=os.getenv(
+                    "NOTHING_BILLING_REQUIRED_SCOPE",
+                    BILLING_SCOPE,
+                ).strip()
+            )
     elif selected_auth_mode == "static-bearer":
         ingestion_authenticator = BearerAuthenticator(
             ingestion_token,
             actor=ingestion_actor,
         )
+        if billing_authenticator is None:
+            billing_authenticator = BearerAuthenticator(
+                os.getenv("NOTHING_BILLING_TOKEN"),
+                actor=os.getenv(
+                    "NOTHING_BILLING_ACTOR",
+                    "authenticated-billing",
+                ),
+                scope=os.getenv(
+                    "NOTHING_BILLING_REQUIRED_SCOPE",
+                    BILLING_SCOPE,
+                ),
+            )
     else:
         raise AuthConfigurationError(
             "unsupported authentication mode: "
             f"{selected_auth_mode}"
         )
+
+    if billing_service is None:
+        try:
+            from src.nothing_postgres import PostgreSQLNothingStore
+            is_postgres = isinstance(store, PostgreSQLNothingStore)
+        except ImportError:
+            is_postgres = False
+        if is_postgres:
+            billing_service = SubscriptionBillingService(
+                store,
+                policies={
+                    "xrpl": ConfirmationPolicy(
+                        required_confirmations=1,
+                        require_finality=True,
+                    ),
+                    "ethereum": ConfirmationPolicy(
+                        required_confirmations=0,
+                        require_finality=True,
+                    ),
+                    "bitcoin": ConfirmationPolicy(
+                        required_confirmations=6,
+                        require_finality=True,
+                    ),
+                },
+            )
 
     return NothingHttpServer(
         (host, port),
@@ -895,6 +1290,8 @@ def build_server(
         store=store,
         owns_store=owns_store,
         ingestion_authenticator=ingestion_authenticator,
+        billing_authenticator=billing_authenticator,
+        billing_service=billing_service,
     )
 
 
