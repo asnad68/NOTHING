@@ -1,0 +1,52 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: nothing-billing-maintenance
+  namespace: nothing
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: nothing-billing-maintenance
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: maintenance
+              image: ghcr.io/asnad68/nothing:CHANGE_ME
+              imagePullPolicy: IfNotPresent
+              command: ["python", "-m", "src.nothing_billing_maintenance"]
+              envFrom:
+                - secretRef:
+                    name: nothing-payment-worker-secrets
+              env:
+                - name: NOTHING_POSTGRES_APPLICATION_NAME
+                  value: nothing-billing-maintenance
+                - name: NOTHING_BILLING_MAINTENANCE_ACTOR
+                  value: billing-maintenance-worker
+                - name: NOTHING_BILLING_EXPIRY_BATCH_SIZE
+                  value: "500"
+              resources:
+                requests:
+                  cpu: 25m
+                  memory: 48Mi
+                limits:
+                  cpu: 250m
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
