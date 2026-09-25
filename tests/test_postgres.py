@@ -137,6 +137,23 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
         self.assertTrue(allowed["checkpoints"])
         self.assertFalse(allowed["identity_heads_update"])
 
+    def test_readiness_fails_when_schema_version_is_behind(self):
+        with self.store._pool.connection() as connection:
+            connection.execute(
+                "DELETE FROM schema_migrations WHERE version = %s",
+                (9,),
+            )
+        try:
+            self.assertFalse(self.store.health())
+        finally:
+            with self.store._pool.connection() as connection:
+                connection.execute(
+                    "INSERT INTO schema_migrations(version) VALUES (%s) "
+                    "ON CONFLICT (version) DO NOTHING",
+                    (9,),
+                )
+        self.assertTrue(self.store.health())
+
     def test_migrations_and_basic_reads(self):
         with self.store._pool.connection() as connection:
             row = connection.execute(
