@@ -2,7 +2,16 @@
 
 ## Scope
 
-The first API contract is read-only. It exposes the resolved NOTHING graph without exposing an internal database model. The API layer is storage-agnostic and is designed to run against the demo filesystem backend or a durable persistence backend.
+The public resource surface is read-oriented, while writes use one explicitly separated authenticated ingestion endpoint. The API exposes the resolved NOTHING graph without exposing an internal database model. The API layer is storage-agnostic and is designed to run against the demo filesystem backend or a durable persistence backend.
+
+The write boundary is deliberately not generic CRUD:
+
+- `POST /v1/ingestion/bundles` accepts Identity, Evidence and Verification Event records only.
+- Procedures are not writable through this endpoint.
+- Authentication is required.
+- `Idempotency-Key` is required.
+- The complete affected graph is validated before persistence commits.
+- A successful ingestion is one atomic transaction from the caller's perspective.
 
 The contract is deployment-neutral: no production API hostname is assumed yet.
 
@@ -23,6 +32,32 @@ Returns a minimal process liveness response. It does not expose storage details.
 ### GET /readyz
 
 Returns whether the configured storage backend is currently reachable. A non-ready response uses HTTP 503.
+
+### POST /v1/ingestion/bundles
+
+Accepts an authenticated write bundle containing arrays named:
+
+- \`identities\`
+- \`evidence\`
+- \`verification_events\`
+
+At least one record must be present.
+
+The request requires:
+
+\`\`\`http
+Authorization: Bearer <credential>
+Content-Type: application/json
+Idempotency-Key: <client key>
+\`\`\`
+
+The reference implementation derives the audit actor from server configuration rather than trusting a client-supplied actor.
+
+The server validates the supplied protocol records, loads the existing affected graph, resolves the combined graph using the versioned protocol resolver, and only then commits identities, evidence, verification events, audit records and the idempotency record.
+
+A retry using the same authenticated actor, idempotency key and request fingerprint replays the original result. Reusing the key with a different request returns \`409 CONFLICT\`.
+
+Procedure versions are not accepted by this endpoint. Procedure creation and semantic version changes remain a governed, immutable resource operation.
 
 ### GET /v1/identity/{nothing_id}
 
@@ -61,6 +96,25 @@ Error responses use:
 `application/problem+json`
 
 UTF-8 is assumed.
+
+## Write authentication
+
+The reference server uses a single server-configured bearer credential for the ingestion endpoint. It is a reference authentication boundary, not an OAuth authorization server or identity provider.
+
+Production bearer credentials must be protected by TLS and managed secret infrastructure. Public GET resources remain unauthenticated.
+
+## Write error/status contract
+
+The ingestion endpoint uses:
+
+- \`400\` for malformed JSON, invalid headers or invalid request shape
+- \`401\` for missing or invalid bearer credentials
+- \`409\` for idempotency or immutable-record conflicts
+- \`413\` for oversized requests
+- \`415\` for unsupported media type
+- \`422\` for a structurally valid request that cannot form an accepted protocol graph
+- \`429\` for write rate limiting, with \`Retry-After\`
+- \`503\` when authenticated ingestion is not configured or persistence is unavailable
 
 ## Errors
 
@@ -117,3 +171,5 @@ This file and `api/openapi.json` define the contract.
 The reference API server is implemented in `src/nothing_api.py`. It consumes the storage port from `src/nothing_store.py` and delegates verification semantics to `src/nothing_protocol.py`.
 
 The production deployment target remains a stateless API tier behind TLS/WAF/API-gateway infrastructure with a PostgreSQL-compatible persistence layer.
+
+Authenticated ingestion is intentionally separate from Verify Web and the public GET resource surface.
