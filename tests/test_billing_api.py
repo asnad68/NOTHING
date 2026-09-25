@@ -16,9 +16,11 @@ class FakeBillingService:
     def __init__(self):
         self.invoice = None
         self.last_customer_ref = None
+        self.last_request_fingerprint = None
 
     def create_invoice(self, **kwargs):
         self.last_customer_ref = kwargs["customer_ref"]
+        self.last_request_fingerprint = kwargs.get("client_request_fingerprint")
         if self.invoice is None:
             self.invoice = PaymentInvoice(
                 invoice_id="11111111-1111-4111-8111-111111111111",
@@ -181,6 +183,16 @@ class BillingApiTests(unittest.TestCase):
         self.assertEqual(response.status, 400)
         self.assertEqual(json.loads(body)["code"], "INVALID_BILLING_REQUEST")
         self.assertIsNone(self.billing.invoice)
+
+    def test_create_invoice_binds_idempotency_to_request_fingerprint(self):
+        response, body = self.post_invoice({
+            "plan_code": "xrp-monthly",
+            "price_id": "33333333-3333-4333-8333-333333333333",
+            "expires_in_seconds": 1800,
+        })
+        self.assertEqual(response.status, 200)
+        self.assertIsNotNone(self.billing.last_request_fingerprint)
+        self.assertEqual(len(self.billing.last_request_fingerprint), 64)
 
     def test_create_invoice_returns_serializable_payment_instructions(self):
         response, body = self.post_invoice({
