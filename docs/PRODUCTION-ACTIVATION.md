@@ -64,6 +64,18 @@ No private key or wallet seed is required by the receive-only worker.
 - Worker checkpoints cannot move backwards.
 - Failed scans do not refresh the worker heartbeat.
 
+## Production boundary requirements
+
+The application containers speak plain HTTP; TLS termination must happen at the controlled ingress/load balancer, and direct public access to the container port must be blocked.
+
+PostgreSQL must be reachable only from the application/migration network, with TLS enabled where supported by the deployment topology. Keep the migrator credential separate from the runtime API/payment credentials. The runtime roles must not receive DDL or ownership privileges.
+
+Configure automated PostgreSQL backups and perform at least one restore verification before accepting real customer payments. Retain the previous application image digests for rollback.
+
+Run exactly one active XRPL payment worker for each receiving-account/worker-name pair. Multiple replicas are not required for payment correctness and can create duplicate scanning work even though settlement is idempotent.
+
+The repository does not provide secret storage, TLS termination, firewalling, backup infrastructure, or production monitoring. Those controls must be supplied by the deployment platform rather than added as source-code assumptions.
+
 ## What is intentionally not done
 
 This repository change does not execute a real-money transaction and does not
