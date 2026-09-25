@@ -130,8 +130,14 @@ class EvmJsonRpcAdapter:
 
         status = _hex_int(receipt.get("status"))
         block_number = _hex_int(receipt.get("blockNumber"))
-        if status != 1 or block_number is None:
-            return PaymentObservation(
+        if status != 1:
+            raise ChainAdapterError(
+                f"EVM transaction {tx_hash} did not succeed"
+            )
+        if block_number is None:
+            raise ChainAdapterError(
+                f"EVM transaction {tx_hash} has no mined block"
+            )
                 network=self.network,
                 asset_code=invoice.asset_code,
                 asset_kind=invoice.asset_kind,
