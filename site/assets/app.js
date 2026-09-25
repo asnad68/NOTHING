@@ -74,12 +74,12 @@
   }
 
   async function fetchJson(path) {
-    const response = await fetch(\`\${API_BASE}\${path}\`, {
+    const response = await fetch(`${API_BASE}${path}`, {
       headers: { Accept: "application/json" },
       cache: "no-store"
     });
     if (!response.ok) {
-      let detail = \`HTTP \${response.status}\`;
+      let detail = `HTTP ${response.status}`;
       try {
         const body = await response.json();
         detail = body.detail || detail;
@@ -93,8 +93,8 @@
 
   async function loadLive(nothingId) {
     const [identityPayload, eventsPayload] = await Promise.all([
-      fetchJson(\`/v1/identity/\${encodeURIComponent(nothingId)}\`),
-      fetchJson(\`/v1/identity/\${encodeURIComponent(nothingId)}/verification-events\`)
+      fetchJson(`/v1/identity/${encodeURIComponent(nothingId)}`),
+      fetchJson(`/v1/identity/${encodeURIComponent(nothingId)}/verification-events`)
     ]);
 
     const events = eventsPayload.data.events || [];
@@ -105,21 +105,21 @@
       ...new Set(
         events
           .filter((event) => event.procedure?.id && event.procedure?.version)
-          .map((event) => \`\${event.procedure.id}@@\${event.procedure.version}\`)
+          .map((event) => `${event.procedure.id}@@${event.procedure.version}`)
       )
     ];
 
     const [evidencePayloads, procedurePayloads] = await Promise.all([
       Promise.all(
         evidenceIds.map((id) =>
-          fetchJson(\`/v1/evidence/\${encodeURIComponent(id)}\`).catch(() => null)
+          fetchJson(`/v1/evidence/${encodeURIComponent(id)}`).catch(() => null)
         )
       ),
       Promise.all(
         procedureKeys.map((key) => {
           const [procedureId, version] = key.split("@@");
           return fetchJson(
-            \`/v1/procedures/\${encodeURIComponent(procedureId)}/\${encodeURIComponent(version)}\`
+            `/v1/procedures/${encodeURIComponent(procedureId)}/${encodeURIComponent(version)}`
           ).catch(() => null);
         })
       )
@@ -160,7 +160,7 @@
     );
     const procedures = new Map(
       record.procedures.map((procedure) => [
-        \`\${procedure.id}@@\${procedure.version}\`,
+        `${procedure.id}@@${procedure.version}`,
         procedure
       ])
     );
@@ -233,28 +233,28 @@
         const eventStatus = event?.result?.status;
         const evidenceIds = event?.evidence || event?.evidence_ids || [];
 
-        return \`
+        return `
           <article class="claim-card">
             <div class="claim-top">
-              <span class="claim-id">\${escapeHtml(
+              <span class="claim-id">${escapeHtml(
                 claim.claim_id || claim.id
               )}</span>
-              <span class="status \${statusClass(
+              <span class="status ${statusClass(
                 claim.status || claim.recorded_status
-              )}">\${escapeHtml(
+              )}">${escapeHtml(
                 claim.status || claim.recorded_status
               )}</span>
             </div>
-            <p class="claim-statement">\${escapeHtml(
+            <p class="claim-statement">${escapeHtml(
               claim.statement
             )}</p>
             <div class="meta-line">
-              <span>Current event: \${escapeHtml(
+              <span>Current event: ${escapeHtml(
                 eventStatus || "NONE"
               )}</span>
-              <span>Evidence: \${evidenceIds.length}</span>
+              <span>Evidence: ${evidenceIds.length}</span>
             </div>
-          </article>\`;
+          </article>`;
       })
       .join("");
 
@@ -266,52 +266,52 @@
     $("#timeline").innerHTML = sortedEvents
       .map((event) => {
         const procedure = procedures.get(
-          \`\${event.procedure?.id}@@\${event.procedure?.version}\`
+          `${event.procedure?.id}@@${event.procedure?.version}`
         );
         const evidenceNames = (event.evidence || []).map((id) => {
           const item = evidenceById.get(id);
-          return item ? \`\${id} — \${item.type}\` : id;
+          return item ? `${id} — ${item.type}` : id;
         });
 
-        return \`
+        return `
           <article class="event">
             <div class="event-dot" aria-hidden="true"></div>
             <div class="event-body">
               <div class="claim-id">
-                \${escapeHtml(event.id || event.event_id)} ·
-                \${escapeHtml(formatDate(event.occurred_at))}
+                ${escapeHtml(event.id || event.event_id)} ·
+                ${escapeHtml(formatDate(event.occurred_at))}
               </div>
               <h3>
-                \${escapeHtml(event.result?.status || "UNKNOWN")} —
-                \${escapeHtml(event.result?.scope || "No declared scope")}
+                ${escapeHtml(event.result?.status || "UNKNOWN")} —
+                ${escapeHtml(event.result?.scope || "No declared scope")}
               </h3>
-              <p>\${escapeHtml(
+              <p>${escapeHtml(
                 event.result?.reason || "No additional reason recorded."
               )}</p>
               <div class="event-meta">
-                <span>Claim: \${escapeHtml(event.claim_id)}</span>
-                <span>Procedure: \${escapeHtml(
-                  \`\${event.procedure?.id || "unknown"}@\${event.procedure?.version || "?"}\`
+                <span>Claim: ${escapeHtml(event.claim_id)}</span>
+                <span>Procedure: ${escapeHtml(
+                  `${event.procedure?.id || "unknown"}@${event.procedure?.version || "?"}`
                 )}</span>
-                <span>Verifier: \${escapeHtml(
+                <span>Verifier: ${escapeHtml(
                   event.verifier?.type || "not specified"
                 )}</span>
-                <span>Evidence: \${escapeHtml(
+                <span>Evidence: ${escapeHtml(
                   evidenceNames.join("; ") || "none"
                 )}</span>
-                \${event.supersedes
-                  ? \`<span>Supersedes: \${escapeHtml(
+                ${event.supersedes
+                  ? `<span>Supersedes: ${escapeHtml(
                       event.supersedes
-                    )}</span>\`
+                    )}</span>`
                   : ""}
-                \${procedure
-                  ? \`<span>Procedure status: \${escapeHtml(
+                ${procedure
+                  ? `<span>Procedure status: ${escapeHtml(
                       procedure.status
-                    )}</span>\`
+                    )}</span>`
                   : ""}
               </div>
             </div>
-          </article>\`;
+          </article>`;
       })
       .join("");
 
@@ -378,7 +378,7 @@
     window.history.replaceState(
       {},
       "",
-      \`?id=\${encodeURIComponent(id)}\`
+      `?id=${encodeURIComponent(id)}`
     );
     load();
   });
