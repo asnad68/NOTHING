@@ -408,6 +408,24 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
                 )
             self.assertIn("checkpoint identity is immutable", str(context.exception).lower())
 
+    def test_readiness_fails_when_schema_history_has_a_gap(self):
+        with self.store._pool.connection() as connection:
+            connection.execute(
+                "DELETE FROM schema_migrations WHERE version = %s",
+                (12,),
+            )
+        try:
+            self.assertFalse(self.store.health())
+        finally:
+            with self.store._transaction(retryable=True) as connection:
+                connection.execute(
+                    "INSERT INTO schema_migrations(version) VALUES (%s) "
+                    "ON CONFLICT (version) DO NOTHING",
+                    (12,),
+                )
+        self.assertTrue(self.store.health())
+
+
     def test_readiness_fails_when_schema_version_is_behind(self):
         with self.store._pool.connection() as connection:
             connection.execute(
