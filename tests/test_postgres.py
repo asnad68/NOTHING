@@ -1,9 +1,13 @@
 import copy
 import os
 import unittest
+import uuid
+from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from src.nothing_billing import ConfirmationPolicy, SubscriptionBillingService
+from src.nothing_payments import PaymentObservation, chain_event_key
 from src.nothing_postgres import PostgreSQLNothingStore
 from src.nothing_store import ConflictError, NotFoundError
 
@@ -72,7 +76,7 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
             row = connection.execute(
                 "SELECT MAX(version) AS version FROM schema_migrations"
             ).fetchone()
-        self.assertEqual(row["version"], 4)
+        self.assertEqual(row["version"], 5)
 
         identity = self.store.get_identity("NTH-000001")
         self.assertEqual(identity.record["nothing_id"], "NTH-000001")
@@ -148,6 +152,112 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
             self.store.get_identity("NTH-000001").revision,
             5,
         )
+
+    def test_payment_settlement_activates_entitlement_once(self):
+        service = SubscriptionBillingService(
+            self.store,
+            policies={
+                "ethereum": ConfirmationPolicy(
+                    required_confirmations=0,
+                    require_finality=True,
+                )
+            },
+        )
+        plan_code = "payment-test-" + uuid.uuid4().hex[:12]
+        price_id = str(uuid.uuid4())
+
+        with self.store._transaction(retryable=True) as connection:
+            connection.execute(
+                """
+                INSERT INTO subscription_plans(
+                    plan_code, duration_seconds, status
+                ) VALUES (%s, %s, 'active')
+                """,
+                (plan_code, 30 * 86400),
+            )
+            connection.execute(
+                """
+                INSERT INTO billing_prices(
+                    price_id, plan_code, asset_code, network, asset_kind,
+                    asset_contract, amount_atomic, asset_decimals,
+                    destination, active
+                ) VALUES (
+                    %s, %s, 'ETH', 'ethereum', 'native',
+                    NULL, %s, 18, %s, TRUE
+                )
+                """,
+                (
+                    price_id,
+                    plan_code,
+                    10**15,
+                    "0xE1c90171271B5325beE02592ACc50A510448d03E",
+                ),
+            )
+
+        invoice = service.create_invoice(
+            customer_ref="customer-payment-test",
+            plan_code=plan_code,
+            price_id=price_id,
+            client_idempotency_key="invoice-once",
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
+            actor="test-billing",
+        )
+
+        observation = PaymentObservation(
+            network="ethereum",
+            asset_code="ETH",
+            asset_kind="native",
+            destination=invoice.destination,
+            amount_atomic=10**15,
+            chain_event_key=chain_event_key(
+                network="ethereum",
+                tx_hash="0xpaymenttest",
+                asset_kind="native",
+            ),
+            tx_hash="0xpaymenttest",
+            block_reference="finalized",
+            confirmation_count=1,
+            finality_status="final",
+            success=True,
+            observed_at=datetime.now(timezone.utc),
+            source="trusted-test-indexer",
+        )
+
+        first = service.settle_observation(
+            invoice_id=invoice.invoice_id,
+            observation=observation,
+            actor="trusted-test-indexer",
+        )
+        self.assertEqual(first["status"], "paid")
+        self.assertIsNotNone(first["entitlement"])
+
+        second = service.settle_observation(
+            invoice_id=invoice.invoice_id,
+            observation=observation,
+            actor="trusted-test-indexer",
+        )
+        self.assertEqual(second["entitlement"], first["entitlement"])
+
+        with self.store._pool.connection() as connection:
+            allocation_count = connection.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM payment_allocations
+                WHERE invoice_id = %s
+                """,
+                (invoice.invoice_id,),
+            ).fetchone()["count"]
+            entitlement_count = connection.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM subscription_entitlements
+                WHERE invoice_id = %s
+                """,
+                (invoice.invoice_id,),
+            ).fetchone()["count"]
+
+        self.assertEqual(allocation_count, 1)
+        self.assertEqual(entitlement_count, 1)
 
     def test_idempotency_key_reuse_with_different_fingerprint_conflicts(self):
         bundle = self.make_bundle()
