@@ -1010,7 +1010,10 @@ class NothingApiHandler(BaseHTTPRequestHandler):
             )
             return
 
-        if not self._check_rate_limit():
+        if path.startswith("/v1/billing/"):
+            if not self._check_billing_rate_limit():
+                return
+        elif not self._check_rate_limit():
             return
 
         try:
