@@ -951,38 +951,27 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
             routing_mode="xrp_destination_tag",
         )
         entitlement_id = uuid.uuid4()
-        invoice_id = uuid.uuid4()
         now = datetime.now(timezone.utc)
+        service = SubscriptionBillingService(
+            self.store,
+            policies={"xrpl": ConfirmationPolicy(
+                required_confirmations=1,
+                require_finality=True,
+            )},
+        )
+        invoice = service.create_invoice(
+            customer_ref="entitlement-customer",
+            plan_code=plan_code,
+            price_id=price_id,
+            client_idempotency_key="expire-entitlement-fixture",
+            expires_at=now + timedelta(minutes=10),
+            actor="billing-test",
+        )
+        invoice_id = uuid.UUID(invoice.invoice_id)
         with self.store._transaction(retryable=True) as connection:
             connection.execute(
-                """
-                INSERT INTO billing_invoices(
-                    invoice_id, customer_ref, plan_code,
-                    asset_code, network, asset_kind, asset_contract,
-                    amount_atomic, asset_decimals, destination,
-                    routing_mode, routing_reference, plan_duration_seconds,
-                    status, client_idempotency_key, expires_at, quote_json
-                ) VALUES (
-                    %s, 'entitlement-customer', %s, %s,
-                    'XRP', 'xrpl', 'xrp', NULL,
-                    1000000, 6,
-                    'r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2',
-                    'xrp_destination_tag', '123', 2592000,
-                    'paid', %s, %s, %s
-                )
-                """,
-                (
-                    invoice_id,
-                    plan_code,
-                    price_id,
-                    "expire-entitlement-fixture",
-                    now + timedelta(minutes=10),
-                    json.dumps({
-                        "plan_code": plan_code,
-                        "price_id": price_id,
-                        "duration_seconds": 2592000,
-                    }),
-                ),
+                "UPDATE billing_invoices SET status = 'paid' WHERE invoice_id = %s",
+                (invoice_id,),
             )
             connection.execute(
                 """
@@ -1004,13 +993,6 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
                 ),
             )
 
-        service = SubscriptionBillingService(
-            self.store,
-            policies={"xrpl": ConfirmationPolicy(
-                required_confirmations=1,
-                require_finality=True,
-            )},
-        )
         changed = service.expire_entitlements(
             actor="entitlement-expiry-worker",
             now=now,
