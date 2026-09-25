@@ -85,6 +85,33 @@ Returns one immutable-style Verification Event and its exact procedure reference
 
 Returns the exact versioned Procedure used to define a verification result.
 
+### POST /v1/billing/invoices
+
+Creates a customer-scoped payment invoice from an operator-controlled active price.
+
+The request accepts only:
+
+- `plan_code`
+- `price_id`
+- optional `expires_in_seconds`
+
+The server derives the customer reference from the authenticated principal and obtains the receiving destination/routing from the configured billing price. The client cannot choose the settlement address, routing reference or another customer's reference.
+
+Authentication uses the separate `nothing:billing` permission.
+
+The response exposes the exact atomic amount, rendered decimal amount, network, asset, destination, routing mode/reference, expiry and current payment state.
+
+`Idempotency-Key` is required. Reusing the same key for the same customer and quote replays the existing invoice; changing the quote under the same key is a conflict.
+
+### GET /v1/billing/invoices/{invoice_id}
+
+Returns the current payment state of an invoice belonging to the authenticated customer. Invoices are not globally enumerable through this route.
+
+### GET /v1/billing/entitlements
+
+Returns currently active entitlements belonging to the authenticated customer. The API does not expose another customer's entitlement set.
+
+
 ## Content types
 
 Successful responses use:
@@ -101,7 +128,8 @@ UTF-8 is assumed.
 
 The reference server uses a single server-configured bearer credential for the ingestion endpoint. It is a reference authentication boundary, not an OAuth authorization server or identity provider.
 
-Production bearer credentials must be protected by TLS and managed secret infrastructure. Public GET resources remain unauthenticated.
+Production bearer credentials must be protected by TLS and managed secret infrastructure. Public identity/evidence/verification resources remain unauthenticated. Billing endpoints use a separate `nothing:billing` scope so payment operations do not inherit the protocol-ingestion permission.
+
 
 ## Write error/status contract
 
