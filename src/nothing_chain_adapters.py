@@ -138,7 +138,7 @@ class EvmJsonRpcAdapter:
             raise ChainAdapterError(
                 f"EVM transaction {tx_hash} has no mined block"
             )
-                network=self.network,
+
                 asset_code=invoice.asset_code,
                 asset_kind=invoice.asset_kind,
                 destination=invoice.destination,
