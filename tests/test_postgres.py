@@ -180,6 +180,74 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
         self.assertEqual(checkpoint["last_tx_hash"], "TX-200")
         self.assertEqual(checkpoint["last_ledger_index"], 200)
 
+    def test_payment_allocation_cannot_exceed_event_amount(self):
+        payment_event_id = uuid.uuid4()
+        invoice_id = uuid.uuid4()
+        plan_code = "allocation-guard-" + uuid.uuid4().hex[:12]
+        with self.store._transaction(retryable=True) as connection:
+            connection.execute(
+                """
+                INSERT INTO subscription_plans(plan_code, duration_seconds, status)
+                VALUES (%s, 3600, 'active')
+                """,
+                (plan_code,),
+            )
+            connection.execute(
+                """
+                INSERT INTO billing_invoices(
+                    invoice_id, customer_ref, plan_code,
+                    asset_code, network, asset_kind, asset_contract,
+                    amount_atomic, asset_decimals, destination,
+                    routing_mode, routing_reference, plan_duration_seconds,
+                    status, client_idempotency_key, expires_at, quote_json
+                ) VALUES (
+                    %s, 'allocation-customer', %s,
+                    'XRP', 'xrpl', 'xrp', NULL,
+                    100, 6,
+                    'r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2',
+                    'xrp_destination_tag', '9002', 3600,
+                    'open', %s, NOW() + INTERVAL '10 minutes', %s
+                )
+                """,
+                (
+                    invoice_id,
+                    plan_code,
+                    "allocation-" + uuid.uuid4().hex,
+                    json.dumps({"plan_code": plan_code, "duration_seconds": 3600}),
+                ),
+            )
+            connection.execute(
+                """
+                INSERT INTO payment_events(
+                    payment_event_id, network, asset_code, asset_kind,
+                    destination, amount_atomic, chain_event_key, tx_hash,
+                    confirmation_count, finality_status, success, source,
+                    first_observed_at, last_observed_at,
+                    routing_mode, routing_reference
+                ) VALUES (
+                    %s, 'xrpl', 'XRP', 'xrp',
+                    'r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2',
+                    100, %s, %s, 1, 'final', TRUE, 'test',
+                    NOW(), NOW(), 'xrp_destination_tag', '9002'
+                )
+                """,
+                (
+                    payment_event_id,
+                    "test-allocation-" + uuid.uuid4().hex,
+                    "test-tx-" + uuid.uuid4().hex,
+                ),
+            )
+        with self.assertRaises(Exception):
+            with self.store._transaction(retryable=True) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO payment_allocations(
+                        payment_event_id, invoice_id, allocated_atomic
+                    ) VALUES (%s, %s, 99)
+                    """,
+                    (payment_event_id, invoice_id),
+                )
+
     def test_payment_role_has_only_required_billing_privileges(self):
         with self.store._pool.connection() as connection:
             allowed = connection.execute(
