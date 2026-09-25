@@ -125,3 +125,47 @@ NOTHING is not currently:
 Version 0.1 is a prototype/research stage.
 
 The immediate engineering objective is not to create a large platform. It is to establish a small, coherent, machine-verifiable identity model that can be tested, audited, and extended without breaking its core principles.
+
+
+## 14. Persistence and production API boundary
+
+The HTTP API is storage-agnostic:
+
+`HTTP -> storage port -> protocol resolver -> API representation`
+
+The repository includes a durable SQLite reference implementation in `src/nothing_store.py`. It is intended for local development, deterministic tests and controlled staging.
+
+The production target is a PostgreSQL-compatible database behind a stateless API tier. The storage port is the compatibility boundary so the HTTP layer does not become coupled to a particular database.
+
+Historical rules:
+
+- Identity updates create storage revisions instead of overwriting prior snapshots.
+- Evidence records are immutable.
+- Verification Events are immutable; corrections use supersession.
+- Procedure ID + version records are immutable.
+- Audit entries are append-only.
+- Canonical payloads receive deterministic SHA-256 content hashes.
+
+A storage revision is not a protocol version. Breaking protocol semantics require a new protocol version.
+
+The public read API should never expose database credentials, internal SQL, storage administration controls or unauthenticated write operations.
+
+## 15. Production topology
+
+```text
+Clients
+  |
+DNS / TLS / WAF / Gateway
+  |
+Stateless API instances
+  |
+Storage Port
+  |
+PostgreSQL-compatible primary
+  |
+Read replicas + encrypted backups
+```
+
+Evidence snapshots, when they become necessary, should be kept in encrypted object storage and referenced by Evidence metadata plus an integrity digest rather than embedded as sensitive database payloads.
+
+Production governance must separately define onboarding authority, authorization, revocation, disputes, retention, privacy deletion/redaction, procedure approval and operator audit.
