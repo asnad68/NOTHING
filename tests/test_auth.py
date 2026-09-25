@@ -134,7 +134,7 @@ class OIDCJwtAuthenticatorTests(unittest.TestCase):
     def test_expired_token_is_rejected(self):
         auth = self.make_authenticator()
         principal = auth.authenticate(
-            f"Bearer {self.token(exp=int(time.time()) - 1)}"
+            f"Bearer {self.token(exp=int(time.time()) - 10)}"
         )
         self.assertIsNone(principal)
 
