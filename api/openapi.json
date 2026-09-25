@@ -381,6 +381,146 @@
           }
         }
       }
+    },
+    "/v1/ingestion/bundles": {
+      "post": {
+        "tags": [
+          "Ingestion"
+        ],
+        "summary": "Atomically ingest authenticated protocol records",
+        "description": "Accepts identities, evidence and verification events through a separately authenticated write boundary. Procedures are not writable through this endpoint. The complete affected graph is validated before a transaction commits.",
+        "operationId": "postIngestionBundle",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IngestionBundleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The ingestion transaction was accepted or replayed idempotently.",
+            "headers": {
+              "X-NOTHING-Ingestion-ID": {
+                "$ref": "#/components/headers/IngestionId"
+              },
+              "Idempotent-Replay": {
+                "$ref": "#/components/headers/IdempotentReplay"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request or missing/invalid idempotency key.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer credential is missing or invalid.",
+            "headers": {
+              "WWW-Authenticate": {
+                "$ref": "#/components/headers/WWWAuthenticate"
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Idempotency conflict or immutable-record conflict.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the deployment size limit.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content type is not application/json.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The protocol bundle cannot be accepted as a coherent graph.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Write-ingestion rate limit exceeded.",
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/RetryAfter"
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authenticated ingestion is not configured or persistence is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -423,6 +563,18 @@
         "schema": {
           "type": "string"
         }
+      },
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": true,
+        "description": "Client-selected printable ASCII request key. The same key must not be reused for a different request by the same authenticated actor.",
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[\\x21-\\x7E]{1,255}$"
+        }
       }
     },
     "headers": {
@@ -450,6 +602,26 @@
         "schema": {
           "type": "integer",
           "minimum": 1
+        }
+      },
+      "WWWAuthenticate": {
+        "description": "Authentication challenge for the bearer credential required by write ingestion.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "IngestionId": {
+        "description": "Stable identifier assigned to the accepted ingestion transaction.",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "IdempotentReplay": {
+        "description": "Present with value true when the response was served from the stored idempotency record.",
+        "schema": {
+          "type": "string",
+          "const": "true"
         }
       }
     },
@@ -1094,6 +1266,143 @@
             "const": "1"
           }
         }
+      },
+      "IngestionBundleRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "identities",
+          "evidence",
+          "verification_events"
+        ],
+        "properties": {
+          "identities": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/IdentityIngestionRecord"
+            }
+          },
+          "evidence": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/EvidenceIngestionRecord"
+            }
+          },
+          "verification_events": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/VerificationEventIngestionRecord"
+            }
+          }
+        }
+      },
+      "IdentityIngestionRecord": {
+        "type": "object",
+        "minProperties": 1,
+        "additionalProperties": true,
+        "description": "Protocol identity record. Normative field validation remains schema/identity.schema.json and the runtime protocol validator.",
+        "x-protocol-schema": "schema/identity.schema.json"
+      },
+      "EvidenceIngestionRecord": {
+        "type": "object",
+        "minProperties": 1,
+        "additionalProperties": true,
+        "description": "Protocol evidence record. Normative field validation remains schema/evidence.schema.json and the runtime protocol validator.",
+        "x-protocol-schema": "schema/evidence.schema.json"
+      },
+      "VerificationEventIngestionRecord": {
+        "type": "object",
+        "minProperties": 1,
+        "additionalProperties": true,
+        "description": "Protocol verification event. Normative field validation remains schema/verification-event.schema.json and the runtime protocol validator.",
+        "x-protocol-schema": "schema/verification-event.schema.json"
+      },
+      "IngestionRecordResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "written"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "written": {
+            "type": "boolean"
+          }
+        }
+      },
+      "IngestionWriteData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ingestion_id",
+          "accepted",
+          "identities",
+          "evidence",
+          "verification_events"
+        ],
+        "properties": {
+          "ingestion_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "accepted": {
+            "type": "boolean",
+            "const": true
+          },
+          "identities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IngestionRecordResult"
+            }
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IngestionRecordResult"
+            }
+          },
+          "verification_events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IngestionRecordResult"
+            }
+          }
+        }
+      },
+      "IngestionResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/IngestionWriteData"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ApiMeta"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "opaque",
+        "description": "Reference write-ingestion authentication. The deployment supplies a protected bearer credential; production use requires TLS."
       }
     }
   }
