@@ -1,8 +1,8 @@
-"""Reference read-only HTTP API for the NOTHING v1 contract.
+"""Read-only HTTP API for the NOTHING v1 contract.
 
-This server intentionally uses only Python's standard library. It is a small,
-deployment-neutral reference implementation, not a production internet-facing
-service. Verification semantics come from src.nothing_protocol.
+The HTTP layer is storage-agnostic. The same API can run against the JSON demo
+backend or the durable SQLite reference backend. Production deployments should
+provide a PostgreSQL-backed implementation of the storage port.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ import json
 import os
 import threading
 import time
+from datetime import datetime
 from email.utils import formatdate
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -21,136 +22,63 @@ from typing import Any
 from urllib.parse import unquote, urlparse
 
 from src.nothing_protocol import RelationshipError, resolve_claim_relationships
+from src.nothing_store import (
+    FilesystemNothingStore,
+    NothingStore,
+    NotFoundError,
+    SQLiteNothingStore,
+    StoreError,
+)
 from src.nothing_verify import (
     EVENT_ID_RE,
     EVIDENCE_ID_RE,
     NOTHING_ID_RE,
     ValidationError,
-    load_json,
-    validate_evidence,
-    validate_verification_event,
-    validate_identity,
 )
 
 API_VERSION = "1"
 PROTOCOL_VERSION = "0.1"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8080
+DEFAULT_BACKEND = os.getenv("NOTHING_STORAGE_BACKEND", "filesystem")
+DEFAULT_DB_PATH = Path(os.getenv("NOTHING_DB_PATH", "data/nothing.db")).expanduser()
 
 RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("NOTHING_RATE_WINDOW_SECONDS", "60"))
-RATE_LIMIT_MAX_REQUESTS = int(os.getenv("NOTHING_RATE_MAX_REQUESTS", "120"))
+RATE_LIMIT_MAX_REQUESTS = int(
+    os.getenv(
+        "NOTHING_RATE_LIMIT_MAX_REQUESTS",
+        os.getenv("NOTHING_RATE_MAX_REQUESTS", "120"),
+    )
+)
 
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-def _data_root() -> Path:
-    configured = os.getenv("NOTHING_DATA_ROOT")
-    return Path(configured).resolve() if configured else _repo_root()
-
-
-def _examples_dir() -> Path:
-    return _data_root() / "examples"
-
-
-def _procedures_path() -> Path:
-    return _data_root() / "procedures" / "registry.json"
-
-
-def _json_load(path: Path) -> dict[str, Any]:
-    return load_json(path)
-
-
-def _find_record(prefix: str, record_id: str) -> Path | None:
-    examples = _examples_dir()
-    if not examples.exists():
-        return None
-    exact = examples / f"{record_id}.json"
-    if exact.is_file():
-        return exact
-
-    for path in examples.glob(f"{prefix}-*.json"):
-        try:
-            record = _json_load(path)
-        except (OSError, json.JSONDecodeError):
-            continue
-        key = {
-            "NTH": "nothing_id",
-            "EVD": "evidence_id",
-            "VER": "event_id",
-        }[prefix]
-        if record.get(key) == record_id:
-            return path
-    return None
-
-
-def _load_all(prefix: str, key: str) -> list[dict[str, Any]]:
-    examples = _examples_dir()
-    if not examples.exists():
-        return []
-    records: list[dict[str, Any]] = []
-    for path in sorted(examples.glob(f"{prefix}-*.json")):
-        record = _json_load(path)
-        if record.get(key):
-            records.append(record)
-    return records
-
-
-def _load_identity(nothing_id: str) -> tuple[dict[str, Any], Path]:
-    path = _find_record("NTH", nothing_id)
-    if path is None:
-        raise FileNotFoundError(nothing_id)
-    identity = _json_load(path)
-    validate_identity(identity)
-    return identity, path
-
-
-def _load_evidence(evidence_id: str) -> tuple[dict[str, Any], Path]:
-    path = _find_record("EVD", evidence_id)
-    if path is None:
-        raise FileNotFoundError(evidence_id)
-    record = _json_load(path)
-    validate_evidence(record)
-    return record, path
-
-
-def _load_event(event_id: str) -> tuple[dict[str, Any], Path]:
-    path = _find_record("VER", event_id)
-    if path is None:
-        raise FileNotFoundError(event_id)
-    record = _json_load(path)
-    validate_verification_event(record)
-    return record, path
-
-
-def _load_registry() -> tuple[dict[str, Any], Path]:
-    path = _procedures_path()
-    if not path.is_file():
-        raise FileNotFoundError(str(path))
-    return _json_load(path), path
-
-
-def _iso_from_mtime(path: Path) -> str:
-    timestamp = path.stat().st_mtime
-    from datetime import datetime, timezone
-    return datetime.fromtimestamp(timestamp, tz=timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
-def _http_last_modified(path: Path) -> str:
-    return formatdate(path.stat().st_mtime, usegmt=True)
-
-
 def _json_bytes(payload: dict[str, Any]) -> bytes:
-    return (json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+    return (
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "
+"
+    ).encode("utf-8")
 
 
 def _etag(payload_bytes: bytes) -> str:
-    digest = hashlib.sha256(payload_bytes).hexdigest()
-    return f'"{digest}"'
+    return '"' + hashlib.sha256(payload_bytes).hexdigest() + '"'
 
 
-def _error_payload(status: int, code: str, detail: str, instance: str | None = None) -> dict[str, Any]:
+def _error_payload(
+    status: int,
+    code: str,
+    detail: str,
+    instance: str | None = None,
+) -> dict[str, Any]:
     payload = {
         "type": "about:blank",
         "title": HTTPStatus(status).phrase,
@@ -163,18 +91,24 @@ def _error_payload(status: int, code: str, detail: str, instance: str | None = N
     return payload
 
 
-def _identity_view(identity: dict[str, Any], resolution: dict[str, Any]) -> dict[str, Any]:
-    events = {
-        event["event_id"]: event
-        for event in _load_all("VER", "event_id")
-        if event["subject"] == identity["nothing_id"]
-    }
+def _iso_to_http_date(value: str) -> str:
+    normalized = value[:-1] + "+00:00" if value.endswith(("Z", "z")) else value
+    timestamp = datetime.fromisoformat(normalized).timestamp()
+    return formatdate(timestamp, usegmt=True)
+
+
+def _identity_view(
+    identity: dict[str, Any],
+    events: list[dict[str, Any]],
+    resolution: dict[str, Any],
+) -> dict[str, Any]:
+    events_by_id = {event["event_id"]: event for event in events}
 
     claims = []
     for claim in identity["claims"]:
         report = resolution["claims"][claim["claim_id"]]
         event_id = report["current_event_id"]
-        current_event = events.get(event_id) if event_id else None
+        current_event = events_by_id.get(event_id) if event_id else None
 
         current_verification = None
         if current_event:
@@ -235,52 +169,13 @@ def _event_view(record: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _procedure_view(procedure: dict[str, Any]) -> dict[str, Any]:
-    return procedure
-
-
-def _meta(*, demo: bool = True, generated_at: str | None = None) -> dict[str, Any]:
-    from datetime import datetime, timezone
+def _meta(*, demo: bool, generated_at: str) -> dict[str, Any]:
     return {
         "api_version": API_VERSION,
         "protocol_version": PROTOCOL_VERSION,
-        "generated_at": generated_at or datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "generated_at": generated_at,
         "demo": demo,
     }
-
-
-def _latest_path(paths: list[Path]) -> Path | None:
-    existing = [path for path in paths if path.is_file()]
-    return max(existing, key=lambda path: path.stat().st_mtime) if existing else None
-
-
-def _identity_source_paths(identity_path: Path) -> list[Path]:
-    paths = [identity_path, _procedures_path()]
-    examples = _examples_dir()
-    if examples.exists():
-        paths.extend(examples.glob("EVD-*.json"))
-        paths.extend(
-            path for path in examples.glob("VER-*.json")
-            if path.is_file()
-        )
-    return [path for path in paths if path.is_file()]
-
-
-def _resolve_identity(identity: dict[str, Any]) -> dict[str, Any]:
-    evidence = _load_all("EVD", "evidence_id")
-    events = [
-        event
-        for event in _load_all("VER", "event_id")
-        if event.get("subject") == identity["nothing_id"]
-    ]
-    registry, _ = _load_registry()
-
-    return resolve_claim_relationships(
-        identity,
-        evidence,
-        events,
-        registry,
-    )
 
 
 class RateLimiter:
@@ -306,9 +201,32 @@ class RateLimiter:
 RATE_LIMITER = RateLimiter(RATE_LIMIT_WINDOW_SECONDS, RATE_LIMIT_MAX_REQUESTS)
 
 
+class NothingHttpServer(ThreadingHTTPServer):
+    def __init__(
+        self,
+        server_address,
+        handler_class,
+        *,
+        store: NothingStore,
+        owns_store: bool,
+    ):
+        super().__init__(server_address, handler_class)
+        self.store = store
+        self.owns_store = owns_store
+
+    def server_close(self) -> None:
+        super().server_close()
+        if self.owns_store:
+            self.store.close()
+
+
 class NothingApiHandler(BaseHTTPRequestHandler):
-    server_version = "NOTHING-Reference/0.1"
+    server_version = "NOTHING-Reference/0.2"
     protocol_version = "HTTP/1.1"
+
+    @property
+    def store(self) -> NothingStore:
+        return self.server.store  # type: ignore[attr-defined]
 
     def log_message(self, fmt: str, *args: Any) -> None:
         print("%s - %s" % (self.address_string(), fmt % args))
@@ -337,7 +255,10 @@ class NothingApiHandler(BaseHTTPRequestHandler):
         self.send_header("X-NOTHING-Protocol-Version", PROTOCOL_VERSION)
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
-        self.send_header("Cache-Control", "public, max-age=60" if allow_cache else "no-store")
+        self.send_header(
+            "Cache-Control",
+            "public, max-age=60" if allow_cache else "no-store",
+        )
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("Access-Control-Allow-Origin", "*")
         if etag:
@@ -350,7 +271,13 @@ class NothingApiHandler(BaseHTTPRequestHandler):
         if body:
             self.wfile.write(body)
 
-    def _send_problem(self, status: int, code: str, detail: str, instance: str | None = None) -> None:
+    def _send_problem(
+        self,
+        status: int,
+        code: str,
+        detail: str,
+        instance: str | None = None,
+    ) -> None:
         self._send(
             status,
             _error_payload(status, code, detail, instance),
@@ -358,11 +285,7 @@ class NothingApiHandler(BaseHTTPRequestHandler):
             allow_cache=False,
         )
 
-    def _check_common(self) -> bool:
-        if self.command != "GET":
-            self._send_problem(405, "METHOD_NOT_ALLOWED", "This reference server is read-only.")
-            return False
-
+    def _check_rate_limit(self) -> bool:
         if not RATE_LIMITER.allow(self._client_key()):
             self._send_problem(
                 429,
@@ -371,44 +294,7 @@ class NothingApiHandler(BaseHTTPRequestHandler):
                 retry_after=RATE_LIMIT_WINDOW_SECONDS,
             )
             return False
-
         return True
-
-    def _conditional(self, payload: dict[str, Any], source_paths: list[Path]) -> bool:
-        body = _json_bytes(payload)
-        etag = _etag(body)
-        if_none_match = self.headers.get("If-None-Match")
-        if if_none_match and if_none_match.strip() == etag:
-            last_modified = None
-            if source_paths:
-                last_modified = _http_last_modified(max(source_paths, key=lambda p: p.stat().st_mtime))
-            self._send(304, None, etag=etag, last_modified=last_modified)
-            return True
-        return False
-
-    def _serve_json(self, payload: dict[str, Any], source_paths: list[Path]) -> None:
-        latest = _latest_path(source_paths)
-        generated_at = _iso_from_mtime(latest) if latest else None
-        payload = dict(payload)
-        if isinstance(payload.get("meta"), dict):
-            payload["meta"] = dict(payload["meta"])
-            payload["meta"]["generated_at"] = generated_at or payload["meta"].get("generated_at")
-        body = _json_bytes(payload)
-        etag = _etag(body)
-        if self.headers.get("If-None-Match", "").strip() == etag:
-            self._send(
-                304,
-                None,
-                etag=etag,
-                last_modified=_http_last_modified(latest) if latest else None,
-            )
-            return
-        self._send(
-            200,
-            payload,
-            etag=etag,
-            last_modified=_http_last_modified(latest) if latest else None,
-        )
 
     def _method_not_allowed(self) -> None:
         self.send_response(405)
@@ -434,17 +320,40 @@ class NothingApiHandler(BaseHTTPRequestHandler):
         self.send_header("Allow", "GET, OPTIONS")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "If-None-Match, Content-Type")
+        self.send_header(
+            "Access-Control-Allow-Headers",
+            "If-None-Match, Content-Type",
+        )
         self.send_header("Content-Length", "0")
         self.end_headers()
 
     def do_GET(self) -> None:
-        if not self._check_common():
-            return
-
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/") or "/"
         instance = parsed.path
+
+        if path == "/healthz":
+            self._send(
+                200,
+                {"status": "ok", "api_version": API_VERSION},
+                allow_cache=False,
+            )
+            return
+
+        if path == "/readyz":
+            ready = self.store.health()
+            self._send(
+                200 if ready else 503,
+                {
+                    "status": "ready" if ready else "not_ready",
+                    "api_version": API_VERSION,
+                },
+                allow_cache=False,
+            )
+            return
+
+        if not self._check_rate_limit():
+            return
 
         try:
             parts = [unquote(p) for p in path.split("/") if p]
@@ -465,111 +374,264 @@ class NothingApiHandler(BaseHTTPRequestHandler):
                 self._get_procedure(parts[2], parts[3], instance)
                 return
 
-            self._send_problem(404, "NOT_FOUND", "The requested API resource does not exist.", instance)
-        except (OSError, json.JSONDecodeError, ValidationError, RelationshipError) as exc:
-            self._send_problem(503, "TEMPORARILY_UNAVAILABLE", f"Verification data could not be resolved: {exc}", instance)
+            self._send_problem(
+                404,
+                "NOT_FOUND",
+                "The requested API resource does not exist.",
+                instance,
+            )
+        except (OSError, json.JSONDecodeError, ValidationError, RelationshipError, StoreError) as exc:
+            self._send_problem(
+                503,
+                "TEMPORARILY_UNAVAILABLE",
+                f"Verification data could not be resolved: {exc}",
+                instance,
+            )
 
     def _get_identity(self, nothing_id: str, instance: str) -> None:
         if not NOTHING_ID_RE.fullmatch(nothing_id):
-            self._send_problem(400, "INVALID_ID", "nothing_id must match NTH-XXXXXX.", instance)
+            self._send_problem(
+                400,
+                "INVALID_ID",
+                "nothing_id must match NTH-XXXXXX.",
+                instance,
+            )
             return
 
         try:
-            identity, identity_path = _load_identity(nothing_id)
-            resolution = _resolve_identity(identity)
-        except FileNotFoundError:
-            self._send_problem(404, "NOT_FOUND", "The requested Nothing ID does not exist.", instance)
+            bundle = self.store.get_identity_bundle(nothing_id)
+        except NotFoundError:
+            self._send_problem(
+                404,
+                "NOT_FOUND",
+                "The requested Nothing ID does not exist.",
+                instance,
+            )
             return
 
-        payload = {
-            "data": _identity_view(identity, resolution),
-            "meta": _meta(demo=True),
-        }
-        self._serve_json(
-            payload,
-            _identity_source_paths(identity_path),
+        identity = bundle.identity.record
+        events = [item.record for item in bundle.events]
+        resolution = resolve_claim_relationships(
+            identity,
+            list(bundle.evidence),
+            events,
+            bundle.registry,
         )
+        payload = {
+            "data": _identity_view(identity, events, resolution),
+            "meta": _meta(
+                demo=self.store.demo,
+                generated_at=bundle.last_modified,
+            ),
+        }
+        self._serve_json(payload, bundle.last_modified)
 
     def _get_evidence(self, evidence_id: str, instance: str) -> None:
         if not EVIDENCE_ID_RE.fullmatch(evidence_id):
-            self._send_problem(400, "INVALID_ID", "evidence_id must match EVD-XXXXXX.", instance)
+            self._send_problem(
+                400,
+                "INVALID_ID",
+                "evidence_id must match EVD-XXXXXX.",
+                instance,
+            )
             return
 
         try:
-            record, path = _load_evidence(evidence_id)
-        except FileNotFoundError:
-            self._send_problem(404, "NOT_FOUND", "The requested evidence record does not exist.", instance)
+            stored = self.store.get_evidence(evidence_id)
+        except NotFoundError:
+            self._send_problem(
+                404,
+                "NOT_FOUND",
+                "The requested evidence record does not exist.",
+                instance,
+            )
             return
 
-        self._serve_json(
-            {"data": _evidence_view(record), "meta": _meta(demo=True)},
-            [path],
-        )
+        payload = {
+            "data": _evidence_view(stored.record),
+            "meta": _meta(
+                demo=self.store.demo,
+                generated_at=stored.recorded_at,
+            ),
+        }
+        self._serve_json(payload, stored.recorded_at)
 
     def _get_event(self, event_id: str, instance: str) -> None:
         if not EVENT_ID_RE.fullmatch(event_id):
-            self._send_problem(400, "INVALID_ID", "event_id must match VER-XXXXXX.", instance)
+            self._send_problem(
+                400,
+                "INVALID_ID",
+                "event_id must match VER-XXXXXX.",
+                instance,
+            )
             return
 
         try:
-            record, path = _load_event(event_id)
-            # Force relationship resolution so the endpoint cannot serve a
-            # structurally valid but semantically unresolvable event.
-            identity, _ = _load_identity(record["subject"])
-            _resolve_identity(identity)
-        except FileNotFoundError:
-            self._send_problem(404, "NOT_FOUND", "The requested verification event does not exist.", instance)
+            stored = self.store.get_event(event_id)
+        except NotFoundError:
+            self._send_problem(
+                404,
+                "NOT_FOUND",
+                "The requested verification event does not exist.",
+                instance,
+            )
             return
 
-        self._serve_json(
-            {"data": _event_view(record), "meta": _meta(demo=True)},
-            [path],
-        )
+        try:
+            identity_bundle = self.store.get_identity_bundle(stored.record["subject"])
+            resolution = resolve_claim_relationships(
+                identity_bundle.identity.record,
+                list(identity_bundle.evidence),
+                [event.record for event in identity_bundle.events],
+                identity_bundle.registry,
+            )
+            report = resolution["claims"][stored.record["claim_id"]]
+            if event_id not in report["verification_event_ids"]:
+                raise RelationshipError(
+                    "verification event is not resolvable from its subject bundle"
+                )
+        except NotFoundError:
+            self._send_problem(
+                503,
+                "TEMPORARILY_UNAVAILABLE",
+                "The event's subject bundle could not be resolved.",
+                instance,
+            )
+            return
+
+        payload = {
+            "data": _event_view(stored.record),
+            "meta": _meta(
+                demo=self.store.demo,
+                generated_at=stored.recorded_at,
+            ),
+        }
+        self._serve_json(payload, stored.recorded_at)
 
     def _get_procedure(self, procedure_id: str, version: str, instance: str) -> None:
         if not procedure_id.startswith("NOTHING-") or not version:
-            self._send_problem(400, "INVALID_ID", "procedure_id or version is invalid.", instance)
+            self._send_problem(
+                400,
+                "INVALID_ID",
+                "procedure_id or version is invalid.",
+                instance,
+            )
             return
 
         try:
-            registry, path = _load_registry()
-        except FileNotFoundError:
-            self._send_problem(503, "TEMPORARILY_UNAVAILABLE", "The procedure registry is unavailable.", instance)
+            stored = self.store.get_procedure(procedure_id, version)
+        except NotFoundError:
+            self._send_problem(
+                404,
+                "NOT_FOUND",
+                "The requested procedure version does not exist.",
+                instance,
+            )
             return
 
-        procedure = next(
-            (
-                item for item in registry["procedures"]
-                if item["id"] == procedure_id and item["version"] == version
+        payload = {
+            "data": stored.record,
+            "meta": _meta(
+                demo=self.store.demo,
+                generated_at=stored.recorded_at,
             ),
-            None,
-        )
-        if procedure is None:
-            self._send_problem(404, "NOT_FOUND", "The requested procedure version does not exist.", instance)
+        }
+        self._serve_json(payload, stored.recorded_at)
+
+    def _serve_json(self, payload: dict[str, Any], last_modified_iso: str) -> None:
+        body = _json_bytes(payload)
+        etag = _etag(body)
+        last_modified = _iso_to_http_date(last_modified_iso)
+        if self.headers.get("If-None-Match", "").strip() == etag:
+            self._send(
+                304,
+                None,
+                etag=etag,
+                last_modified=last_modified,
+            )
             return
 
-        self._serve_json(
-            {"data": _procedure_view(procedure), "meta": _meta(demo=True)},
-            [path],
+        self._send(
+            200,
+            payload,
+            etag=etag,
+            last_modified=last_modified,
         )
 
 
-def build_server(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT) -> ThreadingHTTPServer:
-    return ThreadingHTTPServer((host, port), NothingApiHandler)
+def build_server(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    *,
+    store: NothingStore | None = None,
+    storage_backend: str | None = None,
+    data_root: str | Path | None = None,
+    db_path: str | Path | None = None,
+) -> NothingHttpServer:
+    owns_store = store is None
+    if store is None:
+        selected_backend = storage_backend or DEFAULT_BACKEND
+        if selected_backend == "sqlite":
+            store = SQLiteNothingStore(
+                db_path or DEFAULT_DB_PATH,
+                demo=False,
+            )
+        elif selected_backend == "filesystem":
+            store = FilesystemNothingStore(data_root or _repo_root())
+        else:
+            raise ValueError(f"unsupported storage backend: {selected_backend}")
+
+    return NothingHttpServer(
+        (host, port),
+        NothingApiHandler,
+        store=store,
+        owns_store=owns_store,
+    )
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run the NOTHING reference read-only API server.")
-    parser.add_argument("--host", default=os.getenv("NOTHING_API_HOST", DEFAULT_HOST))
-    parser.add_argument("--port", type=int, default=int(os.getenv("NOTHING_API_PORT", str(DEFAULT_PORT))))
+    parser = argparse.ArgumentParser(
+        description="Run the NOTHING read-only API server."
+    )
+    parser.add_argument(
+        "--host",
+        default=os.getenv("NOTHING_API_HOST", DEFAULT_HOST),
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.getenv("NOTHING_API_PORT", str(DEFAULT_PORT))),
+    )
+    parser.add_argument(
+        "--storage-backend",
+        choices=("filesystem", "sqlite"),
+        default=DEFAULT_BACKEND,
+    )
+    parser.add_argument(
+        "--data-root",
+        default=os.getenv("NOTHING_DATA_ROOT", str(_repo_root())),
+    )
+    parser.add_argument(
+        "--db-path",
+        default=os.getenv("NOTHING_DB_PATH", str(DEFAULT_DB_PATH)),
+    )
     args = parser.parse_args()
 
-    server = build_server(args.host, args.port)
-    print(f"NOTHING Reference API listening on http://{args.host}:{args.port}")
+    server = build_server(
+        args.host,
+        args.port,
+        storage_backend=args.storage_backend,
+        data_root=args.data_root,
+        db_path=args.db_path,
+    )
+    print(
+        f"NOTHING API listening on http://{args.host}:{args.port} "
+        f"(storage={args.storage_backend})"
+    )
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nStopping NOTHING Reference API.")
+        print("\nStopping NOTHING API.")
     finally:
         server.server_close()
 
