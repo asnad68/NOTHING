@@ -81,6 +81,8 @@ def _retry_serializable_method(function: Callable[..., Any]) -> Callable[..., An
                     time.sleep(delay)
         raise AssertionError("unreachable")
 
+    return wrapper
+
 
 def _translate_database_errors(function: Callable[..., Any]) -> Callable[..., Any]:
     @wraps(function)
