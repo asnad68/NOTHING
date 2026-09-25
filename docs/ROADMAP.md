@@ -51,8 +51,13 @@
 - [x] Define production persistence and governance boundary
 - [x] Implement storage port and durable SQLite reference backend
 - [ ] Production PostgreSQL adapter and managed deployment
-- [ ] Authentication for future write operations
-- [ ] Authentication for future write operations
+
+- [x] Define separate authenticated write-ingestion boundary
+- [x] Require bearer authentication and idempotency for writes
+- [x] Implement atomic Identity + Evidence + Verification Event ingestion
+- [x] Persist idempotency records with immutable audit linkage
+- [ ] Production managed authentication / authorization boundary
+
 
 ## Phase 5 — Pilot
 - [ ] Create a controlled pilot dataset
