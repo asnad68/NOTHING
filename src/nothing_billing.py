@@ -569,7 +569,6 @@ class SubscriptionBillingService:
                       AND plan_code = %s
                       AND status = 'active'
                       AND expires_at > %s
-                    FOR SHARE
                     """,
                     (invoice_model.customer_ref, invoice_model.plan_code, now),
                 ).fetchone()
