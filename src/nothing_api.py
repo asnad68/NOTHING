@@ -875,6 +875,14 @@ def main() -> None:
         default=DEFAULT_BACKEND,
     )
     parser.add_argument(
+        "--auth-mode",
+        choices=("static-bearer", "oidc-jwt"),
+        default=os.getenv(
+            "NOTHING_AUTH_MODE",
+            "oidc-jwt" if DEFAULT_BACKEND == "postgres" else "static-bearer",
+        ),
+    )
+    parser.add_argument(
         "--data-root",
         default=os.getenv("NOTHING_DATA_ROOT", str(_repo_root())),
     )
@@ -890,6 +898,7 @@ def main() -> None:
         storage_backend=args.storage_backend,
         data_root=args.data_root,
         db_path=args.db_path,
+        auth_mode=args.auth_mode,
     )
     print(
         f"NOTHING API listening on http://{args.host}:{args.port} "
