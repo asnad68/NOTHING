@@ -16,9 +16,12 @@ from src.nothing_chain_adapters import XrplJsonRpcAdapter
 from src.nothing_postgres import PostgreSQLNothingStore
 
 
-DEFAULT_XRPL_ACCOUNT = "r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2"
-DEFAULT_XRPL_RPC = "https://xrplcluster.com/"
+DEFAULT_XRPL_ACCOUNT = ""
+DEFAULT_XRPL_RPC = ""
 DEFAULT_POLL_SECONDS = 5
+XRPL_ACTIVATION_DISABLED = "disabled"
+XRPL_ACTIVATION_MAINNET = "mainnet"
+XRPL_MAINNET_ACK = "I_UNDERSTAND_REAL_XRPL_PAYMENTS"
 DEFAULT_WORKER_NAME = "xrpl-payment-worker"
 DEFAULT_DISCOVERY_LIMIT = 200
 DEFAULT_MAX_DISCOVERY_PAGES = 20
@@ -48,6 +51,38 @@ def _int_env(name: str, default: int) -> int:
 def _heartbeat(path: str) -> None:
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(str(time.time()))
+
+
+def _require_live_activation() -> tuple[str, str]:
+    """Fail closed unless real XRPL processing is explicitly enabled."""
+    mode = os.getenv(
+        "NOTHING_XRPL_ACTIVATION_MODE",
+        XRPL_ACTIVATION_DISABLED,
+    ).strip().lower()
+
+    if mode == XRPL_ACTIVATION_DISABLED:
+        raise RuntimeError(
+            "XRPL payment worker is disabled; set NOTHING_XRPL_ACTIVATION_MODE=mainnet "
+            "only for an explicitly approved real-money deployment"
+        )
+    if mode != XRPL_ACTIVATION_MAINNET:
+        raise RuntimeError(
+            "NOTHING_XRPL_ACTIVATION_MODE must be 'disabled' or 'mainnet'"
+        )
+
+    ack = os.getenv("NOTHING_XRPL_MAINNET_ACK", "").strip()
+    if ack != XRPL_MAINNET_ACK:
+        raise RuntimeError(
+            "mainnet activation requires NOTHING_XRPL_MAINNET_ACK=I_UNDERSTAND_REAL_XRPL_PAYMENTS"
+        )
+
+    account = os.getenv("NOTHING_XRPL_ACCOUNT", "").strip()
+    rpc_url = os.getenv("NOTHING_XRPL_RPC_URL", "").strip()
+    if not account:
+        raise RuntimeError("NOTHING_XRPL_ACCOUNT is required for mainnet activation")
+    if not rpc_url:
+        raise RuntimeError("NOTHING_XRPL_RPC_URL is required for mainnet activation")
+    return account, rpc_url
 
 
 def build_service() -> tuple[PostgreSQLNothingStore, SubscriptionBillingService]:
@@ -123,14 +158,7 @@ def run_once(
     return settled
 
 def main() -> None:
-    account = os.getenv(
-        "NOTHING_XRPL_ACCOUNT",
-        DEFAULT_XRPL_ACCOUNT,
-    ).strip()
-    rpc_url = os.getenv(
-        "NOTHING_XRPL_RPC_URL",
-        DEFAULT_XRPL_RPC,
-    ).strip()
+    account, rpc_url = _require_live_activation()
     poll_seconds = _float_env(
         "NOTHING_PAYMENT_POLL_SECONDS",
         DEFAULT_POLL_SECONDS,
