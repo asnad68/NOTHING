@@ -1944,7 +1944,6 @@
         "additionalProperties": false,
         "required": [
           "invoice_id",
-          "customer_ref",
           "plan_code",
           "asset_code",
           "network",
@@ -1968,10 +1967,6 @@
           "invoice_id": {
             "type": "string",
             "format": "uuid"
-          },
-          "customer_ref": {
-            "type": "string",
-            "description": "Opaque server-generated customer reference."
           },
           "plan_code": {
             "type": "string"
