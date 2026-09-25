@@ -193,8 +193,22 @@ class BillingApiTests(unittest.TestCase):
         self.assertEqual(data["amount"], "2.5")
         self.assertEqual(data["amount_atomic"], "2500000")
         self.assertEqual(data["routing_reference"], "12345")
+        self.assertNotIn("customer_ref", data)
         self.assertEqual(data["status"], "open")
         self.assertTrue(data["expires_at"].endswith("Z"))
+
+    def test_missing_billing_authenticator_fails_closed(self):
+        original = self.server.billing_authenticator
+        self.server.billing_authenticator = None
+        try:
+            response, body = self.post_invoice({
+                "plan_code": "xrp-monthly",
+                "price_id": "33333333-3333-4333-8333-333333333333",
+            })
+            self.assertEqual(response.status, 503)
+            self.assertEqual(json.loads(body)["code"], "BILLING_UNAVAILABLE")
+        finally:
+            self.server.billing_authenticator = original
 
     def test_billing_scope_is_required(self):
         response, body = self.post_invoice(
