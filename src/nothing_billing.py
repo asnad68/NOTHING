@@ -131,9 +131,18 @@ class SubscriptionBillingService:
                 if (
                     quote.get("plan_code") != plan_code
                     or quote.get("price_id") != price_id
-                    or quote.get("settlement_destination") != settlement_destination
-                    or quote.get("routing_mode") != settlement_routing_mode
-                    or quote.get("routing_reference") != settlement_routing_reference
+                    or (
+                        settlement_destination is not None
+                        and quote.get("settlement_destination") != settlement_destination
+                    )
+                    or (
+                        settlement_routing_mode is not None
+                        and quote.get("routing_mode") != settlement_routing_mode
+                    )
+                    or (
+                        settlement_routing_reference is not None
+                        and quote.get("routing_reference") != settlement_routing_reference
+                    )
                 ):
                     raise ConflictError(
                         "invoice idempotency key was already used for a different quote"
