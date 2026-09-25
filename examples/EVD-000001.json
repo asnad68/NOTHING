@@ -1,0 +1,16 @@
+{
+  "evidence_id": "EVD-000001",
+  "version": "0.1",
+  "type": "web_page",
+  "source": {
+    "reference": "https://example.com",
+    "title": "Example source",
+    "publisher": "Example Publisher",
+    "accessed_at": "2026-09-25T00:00:00Z"
+  },
+  "collected_at": "2026-09-25T00:00:00Z",
+  "integrity": {
+    "method": "none"
+  },
+  "notes": "Synthetic fixture only; not evidence about a real organization."
+}
