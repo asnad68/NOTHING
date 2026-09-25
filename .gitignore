@@ -31,3 +31,10 @@ coverage/
 # Local tooling
 .tmp/
 .cache/
+
+
+# Local persistence
+data/*.db
+data/*.db-*
+data/*.sqlite
+data/*.sqlite3
