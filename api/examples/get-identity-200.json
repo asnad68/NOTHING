@@ -1,0 +1,39 @@
+{
+  "data": {
+    "id": "NTH-000001",
+    "version": "0.1",
+    "subject": {
+      "name": "NOTHING Experimental Identity",
+      "type": "business"
+    },
+    "claims": [
+      {
+        "id": "CLM-000001",
+        "statement": "This record is an experimental demonstration of the NOTHING identity model.",
+        "recorded_status": "SELF-CLAIMED",
+        "current_verification": {
+          "event_id": "VER-000001",
+          "status": "SOURCE-VERIFIED",
+          "occurred_at": "2026-09-25T00:00:00Z",
+          "scope": "The example claim is supported by the referenced example source for this synthetic fixture only.",
+          "procedure": {
+            "id": "NOTHING-BASIC-SOURCE-CHECK",
+            "version": "0.1"
+          },
+          "evidence_ids": [
+            "EVD-000001"
+          ]
+        }
+      }
+    ],
+    "revocation": {
+      "status": "NOT_REVOKED"
+    }
+  },
+  "meta": {
+    "api_version": "1",
+    "protocol_version": "0.1",
+    "generated_at": "2026-09-25T00:00:00Z",
+    "demo": true
+  }
+}
