@@ -12,7 +12,7 @@ GRANT SELECT ON subscription_plans, billing_prices TO nothing_payment;
 GRANT SELECT, UPDATE ON billing_invoices TO nothing_payment;
 GRANT SELECT, INSERT, UPDATE ON payment_events TO nothing_payment;
 GRANT SELECT, INSERT ON payment_allocations TO nothing_payment;
-GRANT SELECT, INSERT, UPDATE ON subscription_entitlements TO nothing_payment;
+GRANT SELECT, INSERT ON subscription_entitlements TO nothing_payment;
 GRANT INSERT ON billing_audit_log TO nothing_payment;
 
 GRANT USAGE, SELECT ON SEQUENCE billing_audit_log_audit_id_seq
