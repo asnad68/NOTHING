@@ -54,8 +54,11 @@ def _reject_extra_keys(record: Mapping[str, Any], allowed: set[str], field: str)
 
 def _parse_datetime(value: str, field: str) -> datetime:
     _require(isinstance(value, str) and bool(value.strip()), f"{field} must be a non-empty string")
+    normalized = value[:-1] + "+00:00" if value.endswith(("Z", "z")) else value
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(normalized)
+        _require(parsed.tzinfo is not None and parsed.utcoffset() is not None, f"{field} must include a timezone offset")
+        return parsed
     except ValueError as exc:
         raise RelationshipError(f"{field} must be a valid ISO-8601 date-time") from exc
 
@@ -304,6 +307,10 @@ def resolve_claim_relationships(
             procedure_registry,
             event["procedure"]["id"],
             event["procedure"]["version"],
+        )
+        _require(
+            procedure["status"] != "DRAFT",
+            f"verification event {event['event_id']} cannot use a DRAFT procedure",
         )
         _require(
             event["result"]["status"] in procedure["allowed_results"],
