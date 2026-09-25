@@ -5,7 +5,11 @@
   "description": "Machine-readable registry of versioned NOTHING verification procedures.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["registry_id", "version", "procedures"],
+  "required": [
+    "registry_id",
+    "version",
+    "procedures"
+  ],
   "properties": {
     "registry_id": {
       "type": "string",
@@ -23,7 +27,7 @@
       "type": "array",
       "minItems": 1,
       "items": {
-        "$ref": "procedure.schema.json"
+        "$ref": "https://github.com/asnad68/NOTHING/blob/main/schema/procedure.schema.json"
       }
     }
   }
