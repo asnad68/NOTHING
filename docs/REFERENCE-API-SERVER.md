@@ -3,7 +3,7 @@
 ## Purpose
 
 The reference server is the first executable implementation of the API contract in `api/openapi.json`.
-It uses only the Python standard library, delegates cross-record verification semantics to `src/nothing_protocol.py`, and can consume either the demo filesystem backend or the durable SQLite reference backend.
+It uses only the Python standard library, delegates cross-record verification semantics to `src/nothing_protocol.py`, and can consume either the demo filesystem backend or the durable SQLite reference backend. Public resource routes are read-only; one separate authenticated ingestion route provides controlled mutations.
 
 ## Start locally
 
