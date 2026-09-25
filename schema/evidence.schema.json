@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/asnad68/NOTHING/blob/main/schema/evidence.schema.json",
+  "title": "NOTHING Evidence Record",
+  "description": "Machine-readable evidence reference for a NOTHING verification process.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["evidence_id", "version", "type", "source", "collected_at", "integrity"],
+  "properties": {
+    "evidence_id": { "type": "string", "pattern": "^EVD-[0-9]{6}$" },
+    "version": { "type": "string", "const": "0.1" },
+    "type": {
+      "type": "string",
+      "enum": ["web_page", "public_record", "authorized_document", "registry_record", "domain_control", "statement", "other"]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reference"],
+      "properties": {
+        "reference": { "type": "string", "minLength": 1 },
+        "title": { "type": "string" },
+        "publisher": { "type": "string" },
+        "accessed_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "collected_at": { "type": "string", "format": "date-time" },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method"],
+      "properties": {
+        "method": { "type": "string", "enum": ["none", "sha256"] },
+        "digest": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" }
+      }
+    },
+    "notes": { "type": "string" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "integrity": { "properties": { "method": { "const": "sha256" } } } } },
+      "then": { "required": ["integrity"], "properties": { "integrity": { "required": ["method", "digest"] } } }
+    }
+  ]
+}
