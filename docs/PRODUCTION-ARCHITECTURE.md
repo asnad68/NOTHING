@@ -49,6 +49,8 @@ The repository now contains:
 - a read-only HTTP server
 - a storage abstraction consumed by the API
 - a durable SQLite implementation for local/staging use
+- a production PostgreSQL adapter with connection pooling and migration support
+- JWT access-token authentication and scope authorization for production ingestion
 - identity revision history
 - immutable Evidence, Verification Event and Procedure records
 - append-only audit records
@@ -173,7 +175,7 @@ The repository provides this implementation without adding a runtime database de
 
 ### Production
 
-A PostgreSQL-compatible database is the intended primary store because production deployment eventually needs:
+PostgreSQL is now implemented as the production-oriented adapter. A PostgreSQL-compatible database is the primary store because production deployment needs:
 
 - multiple API instances
 - transactional concurrency
@@ -301,7 +303,7 @@ The import is idempotent for identical content. Immutable records reject silent 
 
 The public resource API is read-only, while authenticated write ingestion is implemented as a separate mutation boundary.
 
-The production architecture is now defined at the persistence and deployment boundary, but actual production operation still requires an audited deployment, managed credentials, PostgreSQL implementation, TLS/gateway configuration, observability and jurisdiction-specific legal/privacy review.
+The production architecture is now executable through the authenticated ingestion path and PostgreSQL adapter. Actual internet-facing production operation still requires an audited deployment, managed credentials, TLS/gateway configuration, distributed abuse controls, observability, restore-tested backups and jurisdiction-specific legal/privacy review.
 
 ## Authenticated write ingestion
 
@@ -344,3 +346,28 @@ The write route has a separate rate limiter and does not inherit the public GET 
 The reference database keeps idempotency records without automatic pruning. This is conservative: a retained key cannot silently become associated with a different request.
 
 Production must define an explicit retention policy, namespace strategy and operational rules for expired idempotency records before pruning or key reuse is introduced.
+
+
+## Production authentication boundary
+
+The production API uses NOTHING_AUTH_MODE=oidc-jwt.
+
+Access tokens are validated against a fixed HTTPS JWKS endpoint with explicit algorithm, issuer, audience and access-token type checks. Authorization requires the nothing:ingest scope.
+
+The static bearer mode remains a local/reference convenience and is not required by the PostgreSQL production path.
+
+## PostgreSQL concurrency boundary
+
+The PostgreSQL adapter uses:
+
+- bounded synchronous connection pooling
+- explicit transaction contexts
+- SERIALIZABLE isolation for mutations
+- transaction-scoped advisory locks
+- deterministic lock ordering
+- row locks on mutable identity heads
+- retry of the complete mutation on serialization/deadlock failure
+- immutable database triggers
+- migration locking
+
+The database is the final concurrency authority rather than the Python process.
