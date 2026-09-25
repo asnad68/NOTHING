@@ -63,3 +63,12 @@ The PostgreSQL adapter uses a bounded connection pool and serializable write tra
 Production deployment uses the OCI image in `Dockerfile` and the hardened Kubernetes baseline under `deploy/kubernetes/`. Runtime pods do not run schema migrations; migrations are executed separately with the `nothing_migrator` database identity. The current v0.1 deployment boundary is explicitly single-tenant.
 
 Proxy headers: `X-Forwarded-For` is ignored by default. Set `NOTHING_TRUST_PROXY_HEADERS=true` only when a trusted gateway overwrites that header and the network boundary prevents direct client access to the application.
+
+
+## Subscription payment boundary
+
+The payment engine is internal to the production service at this stage.
+
+It does not expose a public payment-confirmation endpoint. A trusted chain adapter must first create a server-side payment observation. Settlement then runs through PostgreSQL invoice idempotency, chain-event uniqueness, finality checks, payment allocation and one-time entitlement activation.
+
+Customer-facing billing routes are intentionally deferred until the project has a customer authentication/account model.
