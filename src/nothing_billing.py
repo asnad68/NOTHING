@@ -777,6 +777,59 @@ class SubscriptionBillingService:
         return str(entitlement_id)
 
     @_retry_billing_transaction
+    @_retry_billing_transaction
+    def expire_entitlements(
+        self,
+        *,
+        actor: str,
+        now: datetime | None = None,
+        limit: int = 500,
+    ) -> int:
+        if not actor.strip():
+            raise PaymentValidationError("actor is required")
+        if limit < 1 or limit > 5000:
+            raise PaymentValidationError("limit must be between 1 and 5000")
+        effective_now = now or datetime.now(timezone.utc)
+        if effective_now.tzinfo is None or effective_now.utcoffset() is None:
+            raise PaymentValidationError("now must include a timezone")
+
+        with self.store._transaction(retryable=True) as connection:
+            rows = connection.execute(
+                """
+                SELECT entitlement_id
+                FROM subscription_entitlements
+                WHERE status = 'active'
+                  AND expires_at < %s
+                ORDER BY expires_at ASC
+                LIMIT %s
+                FOR UPDATE
+                """,
+                (effective_now.astimezone(timezone.utc), limit),
+            ).fetchall()
+            for row in rows:
+                entitlement_id = str(row["entitlement_id"])
+                connection.execute(
+                    """
+                    UPDATE subscription_entitlements
+                    SET status = 'expired'
+                    WHERE entitlement_id = %s
+                    """,
+                    (row["entitlement_id"],),
+                )
+                self._billing_audit(
+                    connection,
+                    actor,
+                    "ENTITLEMENT_EXPIRED",
+                    "entitlement",
+                    entitlement_id,
+                    {
+                        "expired_at": effective_now.astimezone(
+                            timezone.utc
+                        ).isoformat()
+                    },
+                )
+            return len(rows)
+
     def expire_invoices(
         self,
         *,
