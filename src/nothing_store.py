@@ -398,6 +398,14 @@ class SQLiteNothingStore:
             (2, MIGRATION_002),
         )
         with self._connect() as connection:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS schema_migrations (
+                    version INTEGER PRIMARY KEY,
+                    applied_at TEXT NOT NULL
+                )
+                """
+            )
             row = connection.execute(
                 "SELECT MAX(version) AS version FROM schema_migrations"
             ).fetchone()
