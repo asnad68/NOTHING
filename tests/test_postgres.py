@@ -846,9 +846,10 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
             observation=observation,
             actor="xrpl-test-worker",
         )
-        second = service.settle_discovered_observation(
+        second = service.settle_observation(
+            invoice_id=invoice.invoice_id,
             observation=observation,
-            actor="xrpl-test-worker",
+            actor="xrpl-test-worker-replay",
         )
 
         self.assertIsNotNone(first)
