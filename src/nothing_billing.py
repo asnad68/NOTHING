@@ -8,6 +8,7 @@ and atomically allocates the payment and activates an entitlement.
 from __future__ import annotations
 
 import json
+import secrets
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -98,10 +99,17 @@ class SubscriptionBillingService:
                     "unique_destination requires an invoice-specific destination"
                 )
         if settlement_routing_mode == "xrp_destination_tag":
-            if not settlement_routing_reference:
-                raise PaymentValidationError(
-                    "xrp_destination_tag requires an invoice-specific tag"
-                )
+            if settlement_routing_reference is not None:
+                try:
+                    tag_value = int(settlement_routing_reference)
+                except (TypeError, ValueError) as exc:
+                    raise PaymentValidationError(
+                        "XRP destination tag must be an integer"
+                    ) from exc
+                if not 1 <= tag_value <= (2**32 - 1):
+                    raise PaymentValidationError(
+                        "XRP destination tag must fit uint32 and be non-zero"
+                    )
 
         with self.store._transaction(retryable=True) as connection:
             self.store._lock_keys(
@@ -168,6 +176,49 @@ class SubscriptionBillingService:
                 )
 
             invoice_id = uuid.uuid4()
+            effective_routing_mode = (
+                settlement_routing_mode or price["routing_mode"]
+            )
+            effective_destination = (
+                settlement_destination or price["destination"]
+            )
+            effective_routing_reference = settlement_routing_reference
+
+            if effective_routing_mode == "xrp_destination_tag":
+                if price["network"] != "xrpl" or price["asset_code"] != "XRP":
+                    raise PaymentValidationError(
+                        "xrp_destination_tag is valid only for XRPL XRP prices"
+                    )
+                if effective_routing_reference is None:
+                    route_lock = (
+                        f"xrp-route:{price['network']}:{effective_destination}"
+                    )
+                    self.store._lock_keys(connection, [route_lock])
+                    for _ in range(20):
+                        candidate = secrets.randbelow(2**32 - 1) + 1
+                        used = connection.execute(
+                            """
+                            SELECT 1
+                            FROM billing_invoices
+                            WHERE network = %s
+                              AND destination = %s
+                              AND routing_mode = 'xrp_destination_tag'
+                              AND routing_reference = %s
+                            """,
+                            (
+                                price["network"],
+                                effective_destination,
+                                str(candidate),
+                            ),
+                        ).fetchone()
+                        if used is None:
+                            effective_routing_reference = str(candidate)
+                            break
+                    if effective_routing_reference is None:
+                        raise StoreError(
+                            "unable to allocate an unused XRP destination tag"
+                        )
+
             quote = {
                 "price_id": price_id,
                 "plan_code": plan_code,
@@ -177,15 +228,11 @@ class SubscriptionBillingService:
                 "asset_contract": price["asset_contract"],
                 "amount_atomic": str(price["amount_atomic"]),
                 "asset_decimals": int(price["asset_decimals"]),
-                "destination": settlement_destination or price["destination"],
+                "destination": effective_destination,
                 "expires_at": expires_utc.isoformat(),
-                "routing_mode": (
-                    settlement_routing_mode or price["routing_mode"]
-                ),
-                "routing_reference": settlement_routing_reference,
-                "settlement_destination": (
-                    settlement_destination or price["destination"]
-                ),
+                "routing_mode": effective_routing_mode,
+                "routing_reference": effective_routing_reference,
+                "settlement_destination": effective_destination,
             }
 
             connection.execute(
@@ -213,9 +260,9 @@ class SubscriptionBillingService:
                     price["asset_contract"],
                     price["amount_atomic"],
                     price["asset_decimals"],
-                    settlement_destination or price["destination"],
-                    settlement_routing_mode or price["routing_mode"],
-                    settlement_routing_reference,
+                    effective_destination,
+                    effective_routing_mode,
+                    effective_routing_reference,
                     client_idempotency_key,
                     expires_utc,
                     _canonical_json(quote),
@@ -240,11 +287,11 @@ class SubscriptionBillingService:
                 asset_kind=price["asset_kind"],
                 amount_atomic=int(price["amount_atomic"]),
                 asset_decimals=int(price["asset_decimals"]),
-                destination=settlement_destination or price["destination"],
+                destination=effective_destination,
                 expires_at=expires_utc,
                 asset_contract=price["asset_contract"],
-                routing_mode=settlement_routing_mode or price["routing_mode"],
-                routing_reference=settlement_routing_reference,
+                routing_mode=effective_routing_mode,
+                routing_reference=effective_routing_reference,
             )
 
     def settle_observation(
@@ -699,4 +746,51 @@ class SubscriptionBillingService:
                     default=str,
                 ),
             ),
+        )
+
+
+    def settle_discovered_observation(
+        self,
+        *,
+        observation: PaymentObservation,
+        actor: str,
+    ) -> dict[str, Any] | None:
+        """Find the uniquely routed open invoice for an observation."""
+        with self.store._pool.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT invoice_id
+                FROM billing_invoices
+                WHERE network = %s
+                  AND asset_code = %s
+                  AND asset_kind = %s
+                  AND asset_contract IS NOT DISTINCT FROM %s
+                  AND destination = %s
+                  AND routing_mode = %s
+                  AND routing_reference IS NOT DISTINCT FROM %s
+                  AND status IN ('open', 'confirming', 'underpaid')
+                  AND expires_at >= NOW()
+                ORDER BY created_at ASC
+                LIMIT 2
+                """,
+                (
+                    observation.network,
+                    observation.asset_code,
+                    observation.asset_kind,
+                    observation.asset_contract,
+                    observation.destination,
+                    observation.routing_mode,
+                    observation.routing_reference,
+                ),
+            ).fetchall()
+        if not row:
+            return None
+        if len(row) > 1:
+            raise ConflictError(
+                "multiple invoices share the same payment routing tuple"
+            )
+        return self.settle_observation(
+            invoice_id=str(row[0]["invoice_id"]),
+            observation=observation,
+            actor=actor,
         )
