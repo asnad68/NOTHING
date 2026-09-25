@@ -97,6 +97,7 @@ class SubscriptionBillingService:
         client_idempotency_key: str,
         expires_at: datetime,
         actor: str,
+        client_request_fingerprint: str | None = None,
         settlement_destination: str | None = None,
         settlement_routing_mode: str | None = None,
         settlement_routing_reference: str | None = None,
@@ -113,6 +114,17 @@ class SubscriptionBillingService:
             raise PaymentValidationError("expires_at must include a timezone")
 
         expires_utc = expires_at.astimezone(timezone.utc)
+        now_utc = datetime.now(timezone.utc)
+        if expires_utc <= now_utc:
+            raise PaymentValidationError("expires_at must be in the future")
+        if client_request_fingerprint is not None:
+            if (
+                len(client_request_fingerprint) != 64
+                or any(ch not in "0123456789abcdef" for ch in client_request_fingerprint.lower())
+            ):
+                raise PaymentValidationError(
+                    "client_request_fingerprint must be a lowercase SHA-256 hex digest"
+                )
 
         if settlement_routing_mode not in {
             None, "unique_destination", "xrp_destination_tag", "manual_shared"
@@ -168,6 +180,10 @@ class SubscriptionBillingService:
                     or (
                         settlement_routing_reference is not None
                         and quote.get("routing_reference") != settlement_routing_reference
+                    )
+                    or (
+                        client_request_fingerprint is not None
+                        and quote.get("client_request_fingerprint") != client_request_fingerprint
                     )
                 ):
                     raise ConflictError(
@@ -270,6 +286,7 @@ class SubscriptionBillingService:
                 "routing_mode": effective_routing_mode,
                 "routing_reference": effective_routing_reference,
                 "settlement_destination": effective_destination,
+                "client_request_fingerprint": client_request_fingerprint,
             }
 
             connection.execute(
@@ -767,6 +784,58 @@ class SubscriptionBillingService:
             },
         )
         return str(entitlement_id)
+
+    @_retry_billing_transaction
+    def has_active_entitlement(
+        self,
+        *,
+        customer_ref: str,
+        plan_code: str,
+        now: datetime | None = None,
+    ) -> bool:
+        if not customer_ref.strip():
+            raise PaymentValidationError("customer_ref is required")
+        if not plan_code.strip():
+            raise PaymentValidationError("plan_code is required")
+        effective_now = now or datetime.now(timezone.utc)
+        if effective_now.tzinfo is None or effective_now.utcoffset() is None:
+            raise PaymentValidationError("now must include a timezone")
+
+        with self.store._pool.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT 1
+                FROM subscription_entitlements
+                WHERE customer_ref = %s
+                  AND plan_code = %s
+                  AND status = 'active'
+                  AND starts_at <= %s
+                  AND expires_at > %s
+                LIMIT 1
+                """,
+                (
+                    customer_ref,
+                    plan_code,
+                    effective_now.astimezone(timezone.utc),
+                    effective_now.astimezone(timezone.utc),
+                ),
+            ).fetchone()
+        return row is not None
+
+    @_retry_billing_transaction
+    def require_active_entitlement(
+        self,
+        *,
+        customer_ref: str,
+        plan_code: str,
+        now: datetime | None = None,
+    ) -> None:
+        if not self.has_active_entitlement(
+            customer_ref=customer_ref,
+            plan_code=plan_code,
+            now=now,
+        ):
+            raise ConflictError("active entitlement is required")
 
     @_retry_billing_transaction
     def expire_entitlements(
