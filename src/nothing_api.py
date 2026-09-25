@@ -1,4 +1,4 @@
-"""Read-only HTTP API for the NOTHING v1 contract.
+"""HTTP API for the NOTHING v1 contract.
 
 The HTTP layer is storage-agnostic. The same API can run against the JSON demo
 backend or the durable SQLite reference backend. Production deployments should
