@@ -302,6 +302,10 @@ class PostgreSQLNothingStore:
                 (worker_name,),
             ).fetchone()
             if existing is not None:
+                if existing["account"] != account:
+                    raise ConflictError(
+                        "payment worker checkpoint account is immutable"
+                    )
                 existing_ledger = existing["last_ledger_index"]
                 if (
                     existing_ledger is not None
