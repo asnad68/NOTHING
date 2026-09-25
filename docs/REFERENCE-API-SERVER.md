@@ -36,6 +36,7 @@ GET /v1/identity/{nothing_id}
 GET /v1/evidence/{evidence_id}
 GET /v1/verification-events/{event_id}
 GET /v1/procedures/{procedure_id}/{version}
+POST /v1/ingestion/bundles
 GET /healthz
 GET /readyz
 ```
