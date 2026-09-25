@@ -117,7 +117,7 @@ class OpenApiContractTests(unittest.TestCase):
             for parameter in operation["parameters"]
         }
         self.assertIn("Idempotency-Key", parameter_names)
-        for status in ("200", "400", "401", "409", "413", "415", "422", "429", "503"):
+        for status in ("200", "400", "401", "403", "409", "413", "415", "422", "429", "503"):
             self.assertIn(status, operation["responses"])
         self.assertIn(
             "application/problem+json",
