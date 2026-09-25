@@ -146,6 +146,8 @@ class SQLiteNothingStoreTests(unittest.TestCase):
 
     def test_authenticated_ingestion_is_idempotent_and_persistent(self):
         store = self.make_store()
+        procedure = self.load_fixture_bundle()["procedure"]
+        store.put_procedure(procedure, actor="store-test")
         bundle = {
             "identities": [{
                 "nothing_id": "NTH-222222",
