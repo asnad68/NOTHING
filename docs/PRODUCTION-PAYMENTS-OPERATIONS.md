@@ -104,3 +104,36 @@ This payment path is receive-only.
 
 No private key, seed phrase or signing operation is needed by the worker.
 Never give the worker a wallet secret merely to observe incoming payments.
+
+## Manual reconciliation
+
+Automatic settlement must never guess a payer-to-invoice relationship when the
+receiving route is shared. Finalized unallocated payments are therefore kept
+as payment events and can be inspected with:
+
+```bash
+NOTHING_POSTGRES_DSN='...' python -m src.nothing_billing_reconcile list-unallocated
+```
+
+After an operator verifies the transaction, destination, asset, amount and
+invoice relationship using authoritative records, the allocation can be made
+explicitly:
+
+```bash
+NOTHING_POSTGRES_DSN='...' python -m src.nothing_billing_reconcile reconcile \
+  --payment-event-id '<PAYMENT_EVENT_UUID>' \
+  --invoice-id '<INVOICE_UUID>' \
+  --actor '<OPERATOR_ID>'
+```
+
+The reconciliation is transactional and writes a `PAYMENT_MANUALLY_RECONCILED`
+audit entry. A payment event cannot be allocated twice or to two invoices.
+
+
+## Expiration maintenance
+
+A separate Kubernetes CronJob runs `src.nothing_billing_maintenance` every
+five minutes. It transitions expired `open`, `confirming` and `underpaid`
+invoices to `expired` and audits each transition. It uses the payment worker
+database role and does not need blockchain signing credentials.
+
