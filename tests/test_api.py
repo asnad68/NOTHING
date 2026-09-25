@@ -129,6 +129,21 @@ class ReferenceApiHttpTests(unittest.TestCase):
         self.assertEqual(response.status, 200)
         self.assertEqual(json.loads(body)["status"], "ready")
 
+
+    def test_proxy_header_is_not_trusted_by_default(self) -> None:
+        import src.nothing_api as api_module
+
+        old = api_module.TRUST_PROXY_HEADERS
+        api_module.TRUST_PROXY_HEADERS = False
+        try:
+            response, _ = self.request(
+                "/healthz",
+                headers={"X-Forwarded-For": "203.0.113.99"},
+            )
+            self.assertEqual(response.status, 200)
+        finally:
+            api_module.TRUST_PROXY_HEADERS = old
+
 if __name__ == "__main__":
     unittest.main()
 
