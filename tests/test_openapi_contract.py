@@ -29,6 +29,14 @@ class OpenApiContractTests(unittest.TestCase):
         }
         self.assertTrue(expected.issubset(paths))
 
+    def resolve_ref(self, value: dict) -> dict:
+        ref = value.get("$ref")
+        if not ref:
+            return value
+        self.assertTrue(ref.startswith("#/components/"))
+        _, _, section, name = ref.split("/", 3)
+        return self.spec["components"][section][name]
+
     def test_path_parameters_are_declared(self) -> None:
         for path, item in self.spec["paths"].items():
             placeholders = re.findall(r"{([^}]+)}", path)
@@ -36,7 +44,7 @@ class OpenApiContractTests(unittest.TestCase):
                 if not isinstance(operation, dict):
                     continue
                 parameter_names = {
-                    parameter["name"]
+                    self.resolve_ref(parameter)["name"]
                     for parameter in operation.get("parameters", [])
                 }
                 for placeholder in placeholders:
@@ -55,7 +63,7 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn("429", operation["responses"])
         self.assertIn("503", operation["responses"])
         self.assertIn("If-None-Match", {
-            parameter["name"] for parameter in operation["parameters"]
+            self.resolve_ref(parameter)["name"] for parameter in operation["parameters"]
         })
         self.assertIn("application/problem+json",
                       operation["responses"]["404"]["content"])
