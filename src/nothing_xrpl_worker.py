@@ -19,6 +19,9 @@ from src.nothing_postgres import PostgreSQLNothingStore
 DEFAULT_XRPL_ACCOUNT = "r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2"
 DEFAULT_XRPL_RPC = "https://xrplcluster.com/"
 DEFAULT_POLL_SECONDS = 5
+DEFAULT_WORKER_NAME = "xrpl-payment-worker"
+DEFAULT_DISCOVERY_LIMIT = 200
+DEFAULT_MAX_DISCOVERY_PAGES = 20
 
 
 def _float_env(name: str, default: float) -> float:
@@ -28,6 +31,16 @@ def _float_env(name: str, default: float) -> float:
     value = float(raw)
     if value <= 0:
         raise ValueError(f"{name} must be positive")
+    return value
+
+
+def _int_env(name: str, default: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    value = int(raw)
+    if value < 1:
+        raise ValueError(f"{name} must be at least 1")
     return value
 
 
@@ -58,18 +71,50 @@ def run_once(
     *,
     account: str,
     actor: str,
+    worker_name: str = DEFAULT_WORKER_NAME,
+    discovery_limit: int = DEFAULT_DISCOVERY_LIMIT,
+    max_discovery_pages: int = DEFAULT_MAX_DISCOVERY_PAGES,
 ) -> int:
-    observations = adapter.discover_recent_payments(account=account)
+    checkpoint = service.store.get_payment_worker_checkpoint(
+        worker_name,
+        account,
+    )
+    stop_after_tx_hash = (
+        checkpoint["last_tx_hash"]
+        if checkpoint is not None
+        else None
+    )
+
+    discovery = adapter.discover_recent_payments_with_checkpoint(
+        account=account,
+        limit=discovery_limit,
+        stop_after_tx_hash=stop_after_tx_hash,
+        max_pages=max_discovery_pages,
+    )
+
     settled = 0
-    for observation in observations:
+    for observation in discovery.observations:
         result = service.settle_discovered_observation(
             observation=observation,
             actor=actor,
         )
-        if result is not None:
+        if result is None:
+            service.record_unmatched_observation(
+                observation=observation,
+                actor=actor,
+            )
+        else:
             settled += 1
-    return settled
 
+    if discovery.checkpoint_tx_hash is not None:
+        service.store.set_payment_worker_checkpoint(
+            worker_name,
+            account,
+            last_tx_hash=discovery.checkpoint_tx_hash,
+            last_ledger_index=discovery.checkpoint_ledger_index,
+        )
+
+    return settled
 
 def main() -> None:
     account = os.getenv(
@@ -88,6 +133,18 @@ def main() -> None:
         "NOTHING_PAYMENT_ACTOR",
         "xrpl-payment-worker",
     ).strip()
+    worker_name = os.getenv(
+        "NOTHING_XRPL_WORKER_NAME",
+        DEFAULT_WORKER_NAME,
+    ).strip()
+    discovery_limit = _int_env(
+        "NOTHING_XRPL_DISCOVERY_LIMIT",
+        DEFAULT_DISCOVERY_LIMIT,
+    )
+    max_discovery_pages = _int_env(
+        "NOTHING_XRPL_MAX_DISCOVERY_PAGES",
+        DEFAULT_MAX_DISCOVERY_PAGES,
+    )
 
     store, service = build_service()
     adapter = XrplJsonRpcAdapter(rpc_url)
@@ -100,6 +157,9 @@ def main() -> None:
                     service,
                     account=account,
                     actor=actor,
+                    worker_name=worker_name,
+                    discovery_limit=discovery_limit,
+                    max_discovery_pages=max_discovery_pages,
                 )
                 print(
                     '{"event":"xrpl_payment_scan","settled":%d}' % settled,
