@@ -3,7 +3,7 @@ import json
 import threading
 import unittest
 
-from src.nothing_api import build_server
+from src.nothing_api import AuthConfigurationError, build_server
 
 
 class ReferenceApiHttpTests(unittest.TestCase):
@@ -129,6 +129,17 @@ class ReferenceApiHttpTests(unittest.TestCase):
         self.assertEqual(response.status, 200)
         self.assertEqual(json.loads(body)["status"], "ready")
 
+
+    def test_multi_tenant_mode_fails_closed(self) -> None:
+        import src.nothing_api as api_module
+
+        old = api_module.TENANCY_MODE
+        api_module.TENANCY_MODE = "multi-tenant"
+        try:
+            with self.assertRaises(AuthConfigurationError):
+                build_server("127.0.0.1", 0)
+        finally:
+            api_module.TENANCY_MODE = old
 
     def test_proxy_header_is_not_trusted_by_default(self) -> None:
         import src.nothing_api as api_module
