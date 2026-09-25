@@ -25,7 +25,7 @@ A later revision must receive a new version instead of rewriting the meaning of 
 
 ### DRAFT
 
-Design-stage procedure. It should not be treated as an operational verification method.
+Design-stage procedure. The v0.1 resolver rejects verification events that cite a DRAFT procedure.
 
 ### ACTIVE
 
