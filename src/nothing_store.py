@@ -1543,30 +1543,6 @@ class SQLiteNothingStore:
                 raise
 
 
-    def get_identity_bundle(self, nothing_id: str) -> IdentityBundle:
-        ...
-
-    def get_evidence(self, evidence_id: str) -> StoredRecord:
-        ...
-
-    def get_event(self, event_id: str) -> StoredRecord:
-        ...
-
-    def get_procedure(self, procedure_id: str, version: str) -> StoredRecord:
-        ...
-
-    def ingest_bundle(
-        self,
-        bundle: Mapping[str, Any],
-        *,
-        actor: str,
-        idempotency_key: str,
-        request_sha256: str,
-        ingestion_id: str,
-        recorded_at: str | None = None,
-    ) -> IngestionResult:
-        ...
-
 
     def get_identity_bundle(self, nothing_id: str) -> IdentityBundle:
         with self._connect() as connection:
