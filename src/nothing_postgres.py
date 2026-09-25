@@ -115,7 +115,7 @@ class PostgreSQLNothingStore:
         lock_timeout_ms: int = DEFAULT_LOCK_TIMEOUT_MS,
         serialization_retries: int = DEFAULT_SERIALIZATION_RETRIES,
         retry_backoff_seconds: float = DEFAULT_RETRY_BACKOFF_SECONDS,
-        auto_migrate: bool = True,
+        auto_migrate: bool = False,
     ) -> None:
         if not dsn or not dsn.strip():
             raise PostgreSQLNotConfiguredError(
