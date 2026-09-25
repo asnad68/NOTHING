@@ -132,15 +132,20 @@ class ReferenceApiHttpTests(unittest.TestCase):
 
     def test_proxy_header_is_not_trusted_by_default(self) -> None:
         import src.nothing_api as api_module
+        from email.message import Message
+        from src.nothing_api import NothingApiHandler
+
+        handler = object.__new__(NothingApiHandler)
+        handler.headers = Message()
+        handler.headers["X-Forwarded-For"] = "203.0.113.99"
+        handler.client_address = ("198.51.100.7", 12345)
 
         old = api_module.TRUST_PROXY_HEADERS
         api_module.TRUST_PROXY_HEADERS = False
         try:
-            response, _ = self.request(
-                "/healthz",
-                headers={"X-Forwarded-For": "203.0.113.99"},
-            )
-            self.assertEqual(response.status, 200)
+            self.assertEqual(handler._client_key(), "198.51.100.7")
+            api_module.TRUST_PROXY_HEADERS = True
+            self.assertEqual(handler._client_key(), "203.0.113.99")
         finally:
             api_module.TRUST_PROXY_HEADERS = old
 
