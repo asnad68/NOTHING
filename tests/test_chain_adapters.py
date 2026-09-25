@@ -221,7 +221,7 @@ class ChainAdapterTests(unittest.TestCase):
                         "scriptPubKey": {"address": invoice.destination},
                     }],
                 },
-                "getblockchaininfo": {"blocks": 100},
+                "getblockchaininfo": {"chain": "main", "blocks": 100},
                 "getblock": {"confirmations": 5},
             }),
         )
