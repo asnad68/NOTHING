@@ -139,6 +139,41 @@ class ChainAdapterTests(unittest.TestCase):
         with self.assertRaises(ChainAdapterError):
             adapter.verify("tx-btc", invoice)
 
+    def test_evm_reverted_transaction_fails_closed(self):
+        adapter = EvmJsonRpcAdapter(
+            "https://example.invalid/",
+            "ethereum",
+            expected_chain_id=1,
+        )
+        invoice = PaymentInvoice(
+            invoice_id="inv-reverted",
+            customer_ref="cust",
+            plan_code="eth-monthly",
+            asset_code="ETH",
+            network="ethereum",
+            asset_kind="native",
+            amount_atomic=1_000,
+            asset_decimals=18,
+            destination="0xE1c90171271B5325beE02592ACc50A510448d03E",
+            expires_at=datetime.now(timezone.utc),
+            routing_mode="unique_destination",
+        )
+        object.__setattr__(
+            adapter,
+            "_rpc",
+            FakeRpc({
+                "eth_chainId": "0x1",
+                "eth_getTransactionByHash": {"to": invoice.destination, "value": "0x3e8"},
+                "eth_getTransactionReceipt": {
+                    "status": "0x0",
+                    "blockNumber": "0x64",
+                    "blockHash": "0xblock",
+                },
+            }),
+        )
+        with self.assertRaises(ChainAdapterError):
+            adapter.verify("0xreverted", invoice)
+
     def test_erc20_multiple_matching_transfers_fail_closed(self):
         adapter = EvmJsonRpcAdapter(
             "https://example.invalid/",
