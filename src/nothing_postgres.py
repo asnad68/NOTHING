@@ -115,6 +115,7 @@ class PostgreSQLNothingStore:
         lock_timeout_ms: int = DEFAULT_LOCK_TIMEOUT_MS,
         serialization_retries: int = DEFAULT_SERIALIZATION_RETRIES,
         retry_backoff_seconds: float = DEFAULT_RETRY_BACKOFF_SECONDS,
+        auto_migrate: bool = True,
     ) -> None:
         if not dsn or not dsn.strip():
             raise PostgreSQLNotConfiguredError(
@@ -165,7 +166,9 @@ class PostgreSQLNothingStore:
         self._lock_timeout_ms = max(0, lock_timeout_ms)
         self._serialization_retries = max(0, serialization_retries)
         self._retry_backoff_seconds = max(0.0, retry_backoff_seconds)
-        self._migrate()
+        self._auto_migrate = bool(auto_migrate)
+        if self._auto_migrate:
+            self._migrate()
 
     @classmethod
     def from_environment(cls) -> "PostgreSQLNothingStore":
@@ -213,6 +216,9 @@ class PostgreSQLNothingStore:
                     str(DEFAULT_RETRY_BACKOFF_SECONDS),
                 )
             ),
+            auto_migrate=os.getenv(
+                "NOTHING_POSTGRES_AUTO_MIGRATE", "false"
+            ).lower() in {"1", "true", "yes"},
         )
 
     def close(self) -> None:
@@ -1651,3 +1657,16 @@ class PostgreSQLNothingStore:
                 counts["events_inserted"] += 1
 
         return counts
+
+
+def migrate_from_environment() -> None:
+    """Run PostgreSQL migrations using the deployment/migration identity."""
+    store = PostgreSQLNothingStore(
+        os.getenv("NOTHING_POSTGRES_DSN", "").strip(),
+        auto_migrate=True,
+    )
+    store.close()
+
+
+if __name__ == "__main__":
+    migrate_from_environment()
