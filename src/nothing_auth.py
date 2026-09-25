@@ -128,6 +128,10 @@ class OIDCJwtAuthenticator:
             cache_keys=True,
         )
 
+    @property
+    def configured(self) -> bool:
+        return True
+
     @classmethod
     def from_environment(cls) -> "OIDCJwtAuthenticator":
         issuer = os.getenv("NOTHING_AUTH_ISSUER", "").strip()
