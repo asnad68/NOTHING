@@ -120,6 +120,8 @@ class SubscriptionBillingService:
                     destination=existing["destination"],
                     expires_at=existing["expires_at"],
                     asset_contract=existing["asset_contract"],
+                    routing_mode=existing["routing_mode"],
+                    routing_reference=existing["routing_reference"],
                 )
 
             price = connection.execute(
@@ -155,6 +157,7 @@ class SubscriptionBillingService:
                 "asset_decimals": int(price["asset_decimals"]),
                 "destination": price["destination"],
                 "expires_at": expires_utc.isoformat(),
+                "routing_mode": price["routing_mode"],
             }
 
             connection.execute(
@@ -350,6 +353,8 @@ class SubscriptionBillingService:
                 destination=invoice["destination"],
                 expires_at=invoice["expires_at"],
                 asset_contract=invoice["asset_contract"],
+                routing_mode=invoice["routing_mode"],
+                routing_reference=invoice["routing_reference"],
             )
 
             existing_allocation = connection.execute(
@@ -411,6 +416,28 @@ class SubscriptionBillingService:
                 required_confirmations=policy.required_confirmations,
                 require_finality=policy.require_finality,
             )
+
+            if invoice_model.routing_mode == "manual_shared":
+                connection.execute(
+                    """
+                    UPDATE billing_invoices
+                    SET status = 'review_required'
+                    WHERE invoice_id = %s
+                    """,
+                    (invoice_id,),
+                )
+                self._billing_audit(
+                    connection,
+                    actor,
+                    "PAYMENT_REVIEW_REQUIRED",
+                    "invoice",
+                    invoice_id,
+                    {
+                        "reason": "shared destination has no invoice-specific routing",
+                        "payment_event_id": str(payment_event_id),
+                    },
+                )
+                return self._settlement_snapshot(connection, invoice_id)
 
             if decision.eligible_for_allocation:
                 connection.execute(
