@@ -432,12 +432,15 @@ class XrplJsonRpcAdapter:
                     continue
                 if tx.get("TransactionType") != "Payment":
                     continue
-                if item.get("meta", {}).get("TransactionResult") != "tesSUCCESS":
+
+                meta = item.get("meta") or {}
+                if not isinstance(meta, dict):
+                    continue
+                if meta.get("TransactionResult") != "tesSUCCESS":
                     continue
                 if tx.get("Destination") != account:
                     continue
 
-                meta = item.get("meta", {}) or {}
                 delivered = meta.get("delivered_amount")
                 if delivered is None:
                     delivered = meta.get("DeliveredAmount")
