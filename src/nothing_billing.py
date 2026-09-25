@@ -563,6 +563,9 @@ class SubscriptionBillingService:
                 require_finality=policy.require_finality,
             )
 
+            if invoice["status"] in {"canceled", "expired", "review_required"}:
+                return self._settlement_snapshot(connection, invoice_id)
+
             if invoice_model.routing_mode == "manual_shared":
                 connection.execute(
                     """
@@ -642,82 +645,153 @@ class SubscriptionBillingService:
                 (final_status, now, invoice_id),
             )
 
-            entitlement = connection.execute(
+            self._ensure_entitlement(
+                connection,
+                invoice_model=invoice_model,
+                invoice_id=invoice_id,
+                now=now,
+                actor=actor,
+                excess_atomic=excess,
+            )
+
+            return self._settlement_snapshot(connection, invoice_id)
+
+    def _ensure_entitlement(
+        self,
+        connection: Any,
+        *,
+        invoice_model: PaymentInvoice,
+        invoice_id: str,
+        now: datetime,
+        actor: str,
+        excess_atomic: int,
+    ) -> str | None:
+        entitlement = connection.execute(
+            """
+            SELECT entitlement_id
+            FROM subscription_entitlements
+            WHERE invoice_id = %s
+            FOR UPDATE
+            """,
+            (invoice_id,),
+        ).fetchone()
+        if entitlement is not None:
+            return str(entitlement["entitlement_id"])
+
+        plan = connection.execute(
+            """
+            SELECT duration_seconds
+            FROM subscription_plans
+            WHERE plan_code = %s
+            FOR SHARE
+            """,
+            (invoice_model.plan_code,),
+        ).fetchone()
+        if plan is None:
+            raise NotFoundError(
+                f"subscription plan {invoice_model.plan_code} does not exist"
+            )
+
+        previous = connection.execute(
+            """
+            SELECT MAX(expires_at) AS expires_at
+            FROM subscription_entitlements
+            WHERE customer_ref = %s
+              AND plan_code = %s
+              AND status = 'active'
+              AND expires_at > %s
+            """,
+            (invoice_model.customer_ref, invoice_model.plan_code, now),
+        ).fetchone()
+        starts_at = now
+        if previous and previous["expires_at"] is not None:
+            starts_at = max(starts_at, previous["expires_at"])
+
+        expiry_dt = datetime.fromtimestamp(
+            starts_at.timestamp() + int(plan["duration_seconds"]),
+            tz=timezone.utc,
+        )
+        entitlement_id = uuid.uuid4()
+        connection.execute(
+            """
+            INSERT INTO subscription_entitlements(
+                entitlement_id, invoice_id, customer_ref, plan_code,
+                status, starts_at, expires_at, activated_at
+            ) VALUES (%s, %s, %s, %s, 'active', %s, %s, %s)
+            """,
+            (
+                entitlement_id,
+                invoice_id,
+                invoice_model.customer_ref,
+                invoice_model.plan_code,
+                starts_at,
+                expiry_dt,
+                now,
+            ),
+        )
+        self._billing_audit(
+            connection,
+            actor,
+            "ENTITLEMENT_ACTIVATED",
+            "entitlement",
+            str(entitlement_id),
+            {
+                "invoice_id": invoice_id,
+                "plan_code": invoice_model.plan_code,
+                "excess_atomic": str(excess_atomic),
+            },
+        )
+        return str(entitlement_id)
+
+    @staticmethod
+    def expire_invoices(
+        self,
+        *,
+        actor: str,
+        now: datetime | None = None,
+        limit: int = 500,
+    ) -> int:
+        if not actor.strip():
+            raise PaymentValidationError("actor is required")
+        if limit < 1 or limit > 5000:
+            raise PaymentValidationError("limit must be between 1 and 5000")
+        effective_now = now or datetime.now(timezone.utc)
+        if effective_now.tzinfo is None or effective_now.utcoffset() is None:
+            raise PaymentValidationError("now must include a timezone")
+
+        with self.store._transaction(retryable=True) as connection:
+            rows = connection.execute(
                 """
-                SELECT entitlement_id
-                FROM subscription_entitlements
-                WHERE invoice_id = %s
+                SELECT invoice_id
+                FROM billing_invoices
+                WHERE status IN ('open', 'confirming', 'underpaid')
+                  AND expires_at < %s
+                ORDER BY expires_at ASC
                 FOR UPDATE
+                LIMIT %s
                 """,
-                (invoice_id,),
-            ).fetchone()
-
-            if entitlement is None:
-                plan = connection.execute(
-                    """
-                    SELECT duration_seconds
-                    FROM subscription_plans
-                    WHERE plan_code = %s
-                    FOR SHARE
-                    """,
-                    (invoice_model.plan_code,),
-                ).fetchone()
-                if plan is None:
-                    raise NotFoundError(
-                        f"subscription plan {invoice_model.plan_code} does not exist"
-                    )
-
-                previous = connection.execute(
-                    """
-                    SELECT MAX(expires_at) AS expires_at
-                    FROM subscription_entitlements
-                    WHERE customer_ref = %s
-                      AND plan_code = %s
-                      AND status = 'active'
-                      AND expires_at > %s
-                    """,
-                    (invoice_model.customer_ref, invoice_model.plan_code, now),
-                ).fetchone()
-                starts_at = now
-                if previous and previous["expires_at"] is not None:
-                    starts_at = max(starts_at, previous["expires_at"])
-                expires_at = starts_at.timestamp() + int(plan["duration_seconds"])
-                expiry_dt = datetime.fromtimestamp(expires_at, tz=timezone.utc)
-
-                entitlement_id = uuid.uuid4()
+                (effective_now.astimezone(timezone.utc), limit),
+            ).fetchall()
+            for row in rows:
+                invoice_id = str(row["invoice_id"])
                 connection.execute(
                     """
-                    INSERT INTO subscription_entitlements(
-                        entitlement_id, invoice_id, customer_ref, plan_code,
-                        status, starts_at, expires_at, activated_at
-                    ) VALUES (%s, %s, %s, %s, 'active', %s, %s, %s)
+                    UPDATE billing_invoices
+                    SET status = 'expired'
+                    WHERE invoice_id = %s
                     """,
-                    (
-                        entitlement_id,
-                        invoice_id,
-                        invoice_model.customer_ref,
-                        invoice_model.plan_code,
-                        starts_at,
-                        expiry_dt,
-                        now,
-                    ),
+                    (row["invoice_id"],),
                 )
                 self._billing_audit(
                     connection,
                     actor,
-                    "ENTITLEMENT_ACTIVATED",
-                    "entitlement",
-                    str(entitlement_id),
-                    {
-                        "invoice_id": invoice_id,
-                        "plan_code": invoice_model.plan_code,
-                        "excess_atomic": str(excess),
-                    },
+                    "INVOICE_EXPIRED",
+                    "invoice",
+                    invoice_id,
+                    {"expired_at": effective_now.astimezone(timezone.utc).isoformat()},
                 )
+            return len(rows)
 
-            return self._settlement_snapshot(connection, invoice_id)
-
-    @staticmethod
     def customer_ref_for_actor(actor: str) -> str:
         if not actor.strip():
             raise PaymentValidationError("actor is required")
@@ -889,6 +963,150 @@ class SubscriptionBillingService:
             ),
         )
 
+
+    def manual_reconcile_payment(
+        self,
+        *,
+        payment_event_id: str,
+        invoice_id: str,
+        actor: str,
+    ) -> dict[str, Any]:
+        if not actor.strip():
+            raise PaymentValidationError("actor is required")
+        try:
+            payment_uuid = uuid.UUID(payment_event_id)
+        except (TypeError, ValueError) as exc:
+            raise PaymentValidationError("payment_event_id must be a UUID") from exc
+
+        with self.store._transaction(retryable=True) as connection:
+            payment = connection.execute(
+                """
+                SELECT *
+                FROM payment_events
+                WHERE payment_event_id = %s
+                FOR UPDATE
+                """,
+                (payment_uuid,),
+            ).fetchone()
+            if payment is None:
+                raise NotFoundError(f"payment event {payment_event_id} does not exist")
+
+            invoice = connection.execute(
+                """
+                SELECT *
+                FROM billing_invoices
+                WHERE invoice_id = %s
+                FOR UPDATE
+                """,
+                (invoice_id,),
+            ).fetchone()
+            if invoice is None:
+                raise NotFoundError(f"invoice {invoice_id} does not exist")
+            if invoice["status"] == "canceled":
+                raise ConflictError("canceled invoices cannot receive reconciled payments")
+            if payment["finality_status"] != "final" or not payment["success"]:
+                raise ConflictError(
+                    "only successful finalized payments may be manually reconciled"
+                )
+
+            existing = connection.execute(
+                """
+                SELECT invoice_id
+                FROM payment_allocations
+                WHERE payment_event_id = %s
+                """,
+                (payment_uuid,),
+            ).fetchone()
+            if existing is not None:
+                if str(existing["invoice_id"]) != invoice_id:
+                    raise ConflictError(
+                        "payment event is already allocated to another invoice"
+                    )
+                return self._settlement_snapshot(connection, invoice_id)
+
+            if (
+                payment["network"] != invoice["network"]
+                or payment["asset_code"] != invoice["asset_code"]
+                or payment["asset_kind"] != invoice["asset_kind"]
+                or payment["asset_contract"] is not None
+                    and payment["asset_contract"] != invoice["asset_contract"]
+                or payment["destination"] != invoice["destination"]
+            ):
+                raise ConflictError("payment and invoice asset/destination do not match")
+
+            invoice_model = PaymentInvoice(
+                invoice_id=str(invoice["invoice_id"]),
+                customer_ref=invoice["customer_ref"],
+                plan_code=invoice["plan_code"],
+                asset_code=invoice["asset_code"],
+                network=invoice["network"],
+                asset_kind=invoice["asset_kind"],
+                amount_atomic=int(invoice["amount_atomic"]),
+                asset_decimals=int(invoice["asset_decimals"]),
+                destination=invoice["destination"],
+                expires_at=invoice["expires_at"],
+                asset_contract=invoice["asset_contract"],
+                routing_mode=invoice["routing_mode"],
+                routing_reference=invoice["routing_reference"],
+            )
+
+            connection.execute(
+                """
+                INSERT INTO payment_allocations(
+                    payment_event_id, invoice_id, allocated_atomic
+                ) VALUES (%s, %s, %s)
+                """,
+                (
+                    payment_uuid,
+                    invoice_id,
+                    int(payment["amount_atomic"]),
+                ),
+            )
+            self._billing_audit(
+                connection,
+                actor,
+                "PAYMENT_MANUALLY_RECONCILED",
+                "invoice",
+                invoice_id,
+                {
+                    "payment_event_id": str(payment_uuid),
+                    "allocated_atomic": str(payment["amount_atomic"]),
+                },
+            )
+
+            snapshot = self._settlement_snapshot(connection, invoice_id)
+            received_atomic = int(snapshot["received_atomic"])
+            due_atomic = int(snapshot["amount_atomic"])
+            if received_atomic < due_atomic:
+                connection.execute(
+                    """
+                    UPDATE billing_invoices
+                    SET status = 'underpaid'
+                    WHERE invoice_id = %s
+                    """,
+                    (invoice_id,),
+                )
+                return self._settlement_snapshot(connection, invoice_id)
+
+            excess = received_atomic - due_atomic
+            connection.execute(
+                """
+                UPDATE billing_invoices
+                SET status = %s,
+                    paid_at = COALESCE(paid_at, %s)
+                WHERE invoice_id = %s
+                """,
+                ("overpaid" if excess else "paid", effective_now if (effective_now := datetime.now(timezone.utc)) else None, invoice_id),
+            )
+            self._ensure_entitlement(
+                connection,
+                invoice_model=invoice_model,
+                invoice_id=invoice_id,
+                now=effective_now,
+                actor=actor,
+                excess_atomic=excess,
+            )
+            return self._settlement_snapshot(connection, invoice_id)
 
     def record_unmatched_observation(
         self,
