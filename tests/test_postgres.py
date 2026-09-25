@@ -218,6 +218,100 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
             5,
         )
 
+    def test_concurrent_settlements_extend_same_entitlement_chain(self):
+        plan_code = "concurrent-renewal-" + uuid.uuid4().hex[:12]
+        price_ids = [str(uuid.uuid4()), str(uuid.uuid4())]
+        destination = "0x3333333333333333333333333333333333333333"
+        with self.store._transaction(retryable=True) as connection:
+            connection.execute(
+                """
+                INSERT INTO subscription_plans(
+                    plan_code, duration_seconds, status
+                ) VALUES (%s, %s, 'active')
+                """,
+                (plan_code, 3600),
+            )
+            for price_id in price_ids:
+                connection.execute(
+                    """
+                    INSERT INTO billing_prices(
+                        price_id, plan_code, asset_code, network, asset_kind,
+                        asset_contract, amount_atomic, asset_decimals,
+                        destination, active, routing_mode
+                    ) VALUES (
+                        %s, %s, 'ETH', 'ethereum', 'native',
+                        NULL, 1000, 18, %s, TRUE, 'unique_destination'
+                    )
+                    """,
+                    (price_id, plan_code, destination),
+                )
+
+        service = SubscriptionBillingService(
+            self.store,
+            policies={"ethereum": ConfirmationPolicy(
+                required_confirmations=0,
+                require_finality=True,
+            )},
+        )
+        invoices = [
+            service.create_invoice(
+                customer_ref="concurrent-customer",
+                plan_code=plan_code,
+                price_id=price_id,
+                client_idempotency_key=f"concurrent-{idx}",
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
+                actor="billing-test",
+                settlement_destination=f"0x{idx + 4:040x}",
+                settlement_routing_mode="unique_destination",
+            )
+            for idx, price_id in enumerate(price_ids)
+        ]
+
+        def settle(idx):
+            invoice = invoices[idx]
+            return service.settle_observation(
+                invoice_id=invoice.invoice_id,
+                observation=PaymentObservation(
+                    network="ethereum",
+                    asset_code="ETH",
+                    asset_kind="native",
+                    destination=invoice.destination,
+                    amount_atomic=1000,
+                    chain_event_key=chain_event_key(
+                        network="ethereum",
+                        tx_hash=f"0xconcurrent-{idx}",
+                        asset_kind="native",
+                    ),
+                    tx_hash=f"0xconcurrent-{idx}",
+                    block_reference=f"0xblock-{idx}",
+                    confirmation_count=10,
+                    finality_status="final",
+                    success=True,
+                    observed_at=datetime.now(timezone.utc),
+                    source="test-indexer",
+                    routing_mode="unique_destination",
+                    routing_reference=None,
+                ),
+                actor="test-indexer",
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(settle, range(2)))
+
+        self.assertTrue(all(result["status"] == "paid" for result in results))
+        with self.store._pool.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT COUNT(*) AS count, MAX(expires_at) - MIN(starts_at) AS span
+                FROM subscription_entitlements
+                WHERE customer_ref = %s
+                  AND plan_code = %s
+                """,
+                ("concurrent-customer", plan_code),
+            ).fetchone()
+        self.assertEqual(row["count"], 2)
+        self.assertEqual(int(row["span"].total_seconds()), 7200)
+
     def test_payment_settlement_activates_entitlement_once(self):
         service = SubscriptionBillingService(
             self.store,
