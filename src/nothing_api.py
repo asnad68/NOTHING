@@ -248,6 +248,10 @@ class NothingApiHandler(BaseHTTPRequestHandler):
     def store(self) -> NothingStore:
         return self.server.store  # type: ignore[attr-defined]
 
+    @property
+    def ingestion_authenticator(self) -> BearerAuthenticator:
+        return self.server.ingestion_authenticator  # type: ignore[attr-defined]
+
     def log_message(self, fmt: str, *args: Any) -> None:
         print("%s - %s" % (self.address_string(), fmt % args))
 
