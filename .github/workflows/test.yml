@@ -51,6 +51,12 @@ jobs:
           python-version: "3.12"
       - name: Install development dependencies
         run: python -m pip install -r requirements-dev.txt
+      - name: Bootstrap database roles for integration tests
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql "$NOTHING_TEST_POSTGRES_DSN" -v ON_ERROR_STOP=1 -c "CREATE ROLE nothing_migrator NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;"
+          psql "$NOTHING_TEST_POSTGRES_DSN" -v ON_ERROR_STOP=1 -c "CREATE ROLE nothing_app NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;"
       - name: Run PostgreSQL integration tests
         run: python -m unittest tests.test_postgres -v
 
