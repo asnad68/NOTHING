@@ -3,7 +3,10 @@
 The normative API contract is \`openapi.json\`.
 
 The reference server is implemented in \`src/nothing_api.py\`:
-\`python -m src.nothing_api\`
+
+\`\`\`bash
+python -m src.nothing_api
+\`\`\`
 
 Contract versions:
 - API: v1
@@ -26,8 +29,6 @@ Authenticated write ingestion:
 - Uses one atomic persistence transaction
 - Procedures are not writable through the endpoint
 
-The server consumes the existing protocol resolver rather than implementing a second verification engine.
-
 Reference configuration:
 - \`NOTHING_INGESTION_TOKEN\`
 - \`NOTHING_INGESTION_ACTOR\`
@@ -37,3 +38,5 @@ Reference configuration:
 - \`NOTHING_INGESTION_RATE_LIMIT_MAX_REQUESTS\`
 
 The bearer credential is never stored in source control. The reference server uses a configured credential; production should replace this single-token boundary with managed authentication infrastructure.
+
+The server consumes the existing protocol resolver rather than implementing a second verification engine.
