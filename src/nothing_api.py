@@ -576,6 +576,11 @@ class NothingApiHandler(BaseHTTPRequestHandler):
     def _billing_principal(self) -> AuthenticatedPrincipal | None:
         self._cors_allowed = False
         if self.billing_authenticator is None:
+            self._send_problem(
+                503,
+                "BILLING_UNAVAILABLE",
+                "Billing authentication is not configured for this deployment.",
+            )
             return None
         principal = self.billing_authenticator.authenticate(
             self.headers.get("Authorization")
@@ -734,6 +739,7 @@ class NothingApiHandler(BaseHTTPRequestHandler):
         from decimal import Decimal
 
         response = dict(snapshot)
+        response.pop("customer_ref", None)
         response["amount_atomic"] = str(amount_atomic)
         response["amount"] = format(
             Decimal(amount_atomic).scaleb(-decimals).normalize(),
