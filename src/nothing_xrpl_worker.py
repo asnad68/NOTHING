@@ -22,6 +22,7 @@ DEFAULT_POLL_SECONDS = 5
 DEFAULT_WORKER_NAME = "xrpl-payment-worker"
 DEFAULT_DISCOVERY_LIMIT = 200
 DEFAULT_MAX_DISCOVERY_PAGES = 20
+DEFAULT_HEARTBEAT_FILE = "/tmp/nothing-xrpl-worker.heartbeat"
 
 
 def _float_env(name: str, default: float) -> float:
@@ -42,6 +43,11 @@ def _int_env(name: str, default: int) -> int:
     if value < 1:
         raise ValueError(f"{name} must be at least 1")
     return value
+
+
+def _heartbeat(path: str) -> None:
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(str(time.time()))
 
 
 def build_service() -> tuple[PostgreSQLNothingStore, SubscriptionBillingService]:
@@ -133,6 +139,10 @@ def main() -> None:
         "NOTHING_PAYMENT_ACTOR",
         "xrpl-payment-worker",
     ).strip()
+    heartbeat_file = os.getenv(
+        "NOTHING_WORKER_HEARTBEAT_FILE",
+        DEFAULT_HEARTBEAT_FILE,
+    ).strip()
     worker_name = os.getenv(
         "NOTHING_XRPL_WORKER_NAME",
         DEFAULT_WORKER_NAME,
@@ -161,11 +171,13 @@ def main() -> None:
                     discovery_limit=discovery_limit,
                     max_discovery_pages=max_discovery_pages,
                 )
+                _heartbeat(heartbeat_file)
                 print(
                     '{"event":"xrpl_payment_scan","settled":%d}' % settled,
                     flush=True,
                 )
             except Exception as exc:
+                _heartbeat(heartbeat_file)
                 print(
                     '{"event":"xrpl_payment_scan_error","error_type":"%s"}'
                     % type(exc).__name__,
