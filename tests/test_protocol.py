@@ -49,6 +49,17 @@ class ProtocolRelationshipTests(unittest.TestCase):
         with self.assertRaises(RelationshipError):
             self.resolve(events=[event])
 
+    def test_draft_procedure_cannot_be_used_for_an_event(self) -> None:
+        registry = copy.deepcopy(self.registry)
+        registry["procedures"][0]["status"] = "DRAFT"
+        with self.assertRaises(RelationshipError):
+            resolve_claim_relationships(
+                self.identity,
+                self.evidence,
+                [self.event],
+                registry,
+            )
+
     def test_procedure_result_allow_list_is_enforced(self) -> None:
         event = copy.deepcopy(self.event)
         event["result"]["status"] = "VERIFIED"
