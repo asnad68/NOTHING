@@ -410,6 +410,34 @@ class NothingApiHandler(BaseHTTPRequestHandler):
             last_modified=_http_last_modified(latest) if latest else None,
         )
 
+    def _method_not_allowed(self) -> None:
+        self.send_response(405)
+        self.send_header("Allow", "GET, OPTIONS")
+        self.send_header("Content-Length", "0")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+
+    def do_POST(self) -> None:
+        self._method_not_allowed()
+
+    def do_PUT(self) -> None:
+        self._method_not_allowed()
+
+    def do_PATCH(self) -> None:
+        self._method_not_allowed()
+
+    def do_DELETE(self) -> None:
+        self._method_not_allowed()
+
+    def do_OPTIONS(self) -> None:
+        self.send_response(204)
+        self.send_header("Allow", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "If-None-Match, Content-Type")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def do_GET(self) -> None:
         if not self._check_common():
             return
