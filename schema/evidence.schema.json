@@ -38,8 +38,20 @@
   },
   "allOf": [
     {
-      "if": { "properties": { "integrity": { "properties": { "method": { "const": "sha256" } } } } },
-      "then": { "required": ["integrity"], "properties": { "integrity": { "required": ["method", "digest"] } } }
+      "if": {
+        "properties": {
+          "integrity": {
+            "required": ["method"],
+            "properties": { "method": { "const": "sha256" } }
+          }
+        },
+        "required": ["integrity"]
+      },
+      "then": {
+        "properties": {
+          "integrity": { "required": ["method", "digest"] }
+        }
+      }
     }
   ]
 }
