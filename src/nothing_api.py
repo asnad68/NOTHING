@@ -39,7 +39,6 @@ DEFAULT_PORT = 8080
 
 RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("NOTHING_RATE_WINDOW_SECONDS", "60"))
 RATE_LIMIT_MAX_REQUESTS = int(os.getenv("NOTHING_RATE_MAX_REQUESTS", "120"))
-MAX_REQUEST_BYTES = int(os.getenv("NOTHING_MAX_REQUEST_BYTES", "8192"))
 
 
 def _repo_root() -> Path:
@@ -250,6 +249,23 @@ def _meta(*, demo: bool = True, generated_at: str | None = None) -> dict[str, An
     }
 
 
+def _latest_path(paths: list[Path]) -> Path | None:
+    existing = [path for path in paths if path.is_file()]
+    return max(existing, key=lambda path: path.stat().st_mtime) if existing else None
+
+
+def _identity_source_paths(identity_path: Path) -> list[Path]:
+    paths = [identity_path, _procedures_path()]
+    examples = _examples_dir()
+    if examples.exists():
+        paths.extend(examples.glob("EVD-*.json"))
+        paths.extend(
+            path for path in examples.glob("VER-*.json")
+            if path.is_file()
+        )
+    return [path for path in paths if path.is_file()]
+
+
 def _resolve_identity(identity: dict[str, Any]) -> dict[str, Any]:
     evidence = _load_all("EVD", "evidence_id")
     events = [
@@ -371,9 +387,14 @@ class NothingApiHandler(BaseHTTPRequestHandler):
         return False
 
     def _serve_json(self, payload: dict[str, Any], source_paths: list[Path]) -> None:
+        latest = _latest_path(source_paths)
+        generated_at = _iso_from_mtime(latest) if latest else None
+        payload = dict(payload)
+        if isinstance(payload.get("meta"), dict):
+            payload["meta"] = dict(payload["meta"])
+            payload["meta"]["generated_at"] = generated_at or payload["meta"].get("generated_at")
         body = _json_bytes(payload)
         etag = _etag(body)
-        latest = max(source_paths, key=lambda p: p.stat().st_mtime) if source_paths else None
         if self.headers.get("If-None-Match", "").strip() == etag:
             self._send(
                 304,
@@ -438,7 +459,7 @@ class NothingApiHandler(BaseHTTPRequestHandler):
         }
         self._serve_json(
             payload,
-            [identity_path, *_load_all("EVD", "evidence_id") and [], identity_path],
+            _identity_source_paths(identity_path),
         )
 
     def _get_evidence(self, evidence_id: str, instance: str) -> None:
