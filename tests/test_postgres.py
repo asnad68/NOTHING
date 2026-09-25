@@ -769,6 +769,98 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
             )
 
 
+
+    def test_xrp_payment_to_invoice_activates_entitlement_once(self):
+        plan_code = "xrp-e2e-" + uuid.uuid4().hex[:12]
+        price_id = str(uuid.uuid4())
+        destination = "r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2"
+        self._insert_payment_plan(
+            plan_code=plan_code,
+            price_id=price_id,
+            asset_code="XRP",
+            network="xrpl",
+            asset_kind="xrp",
+            amount_atomic=2_500_000,
+            asset_decimals=6,
+            destination=destination,
+            routing_mode="xrp_destination_tag",
+        )
+        service = SubscriptionBillingService(
+            self.store,
+            policies={"xrpl": ConfirmationPolicy(
+                required_confirmations=1,
+                require_finality=True,
+            )},
+        )
+        invoice = service.create_invoice(
+            customer_ref="xrp-e2e-customer",
+            plan_code=plan_code,
+            price_id=price_id,
+            client_idempotency_key="xrp-e2e-key-" + uuid.uuid4().hex,
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
+            actor="billing-test",
+        )
+
+        tx_hash = "xrp-e2e-" + uuid.uuid4().hex
+        observation = PaymentObservation(
+            network="xrpl",
+            asset_code="XRP",
+            asset_kind="xrp",
+            destination=invoice.destination,
+            amount_atomic=2_500_000,
+            chain_event_key=chain_event_key(
+                network="xrpl",
+                tx_hash=tx_hash,
+                asset_kind="xrp",
+            ),
+            tx_hash=tx_hash,
+            block_reference="100",
+            confirmation_count=1,
+            finality_status="final",
+            success=True,
+            observed_at=datetime.now(timezone.utc),
+            source="xrpl-test-adapter",
+            routing_mode="xrp_destination_tag",
+            routing_reference=invoice.routing_reference,
+        )
+
+        first = service.settle_discovered_observation(
+            observation=observation,
+            actor="xrpl-test-worker",
+        )
+        second = service.settle_discovered_observation(
+            observation=observation,
+            actor="xrpl-test-worker",
+        )
+
+        self.assertIsNotNone(first)
+        self.assertIsNotNone(first["entitlement"])
+        self.assertEqual(second["invoice_id"], invoice.invoice_id)
+        self.assertEqual(second["status"], "paid")
+        self.assertEqual(second["entitlement"]["status"], "active")
+
+        with self.store._pool.connection() as connection:
+            allocation_count = connection.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM payment_allocations
+                WHERE invoice_id = %s
+                """,
+                (invoice.invoice_id,),
+            ).fetchone()["count"]
+            entitlement_count = connection.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM subscription_entitlements
+                WHERE invoice_id = %s
+                """,
+                (invoice.invoice_id,),
+            ).fetchone()["count"]
+
+        self.assertEqual(allocation_count, 1)
+        self.assertEqual(entitlement_count, 1)
+
+
     def test_manual_reconciliation_activates_entitlement_for_shared_payment(self):
         plan_code = "manual-reconcile-" + uuid.uuid4().hex[:12]
         price_id = str(uuid.uuid4())
