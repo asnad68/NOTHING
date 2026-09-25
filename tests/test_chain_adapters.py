@@ -142,6 +142,40 @@ class ChainAdapterTests(unittest.TestCase):
         self.assertEqual(obs.routing_mode, "unique_destination")
 
 
+    def test_xrpl_initial_discovery_does_not_advance_past_page_limit(self):
+        adapter = XrplJsonRpcAdapter("https://example.invalid/")
+        page = {
+            "validated": True,
+            "transactions": [
+                {
+                    "validated": True,
+                    "ledger_index": 10,
+                    "tx_json": {
+                        "hash": "OLDER-1",
+                        "TransactionType": "AccountSet",
+                    },
+                    "meta": {"TransactionResult": "tesSUCCESS"},
+                }
+            ],
+            "marker": {"page": 2},
+        }
+        object.__setattr__(
+            adapter,
+            "_rpc",
+            FakeRpc({"account_tx": page}),
+        )
+
+        with self.assertRaises(Exception) as context:
+            adapter.discover_recent_payments_with_checkpoint(
+                account="r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2",
+                stop_after_tx_hash=None,
+                max_pages=1,
+            )
+        self.assertIn(
+            "page limit reached",
+            str(context.exception).lower(),
+        )
+
     def test_xrpl_discovery_paginates_until_checkpoint(self):
         adapter = XrplJsonRpcAdapter("https://example.invalid/")
         calls = []
