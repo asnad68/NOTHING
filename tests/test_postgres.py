@@ -1,4 +1,5 @@
 import copy
+import json
 import os
 import unittest
 import uuid
@@ -620,6 +621,103 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
         self.assertEqual(first["status"], "review_required")
         self.assertEqual(second["status"], "review_required")
         self.assertIsNone(second["entitlement"])
+
+    def test_expire_entitlements_changes_active_state_and_audits(self):
+        plan_code = "entitlement-expiration-" + uuid.uuid4().hex[:12]
+        price_id = str(uuid.uuid4())
+        self._insert_payment_plan(
+            plan_code=plan_code,
+            price_id=price_id,
+            asset_code="XRP",
+            network="xrpl",
+            asset_kind="xrp",
+            amount_atomic=1_000_000,
+            asset_decimals=6,
+            destination="r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2",
+            routing_mode="xrp_destination_tag",
+        )
+        entitlement_id = uuid.uuid4()
+        invoice_id = uuid.uuid4()
+        now = datetime.now(timezone.utc)
+        with self.store._transaction(retryable=True) as connection:
+            connection.execute(
+                """
+                INSERT INTO billing_invoices(
+                    invoice_id, customer_ref, plan_code, price_id,
+                    asset_code, network, asset_kind, asset_contract,
+                    amount_atomic, asset_decimals, destination,
+                    routing_mode, routing_reference, status, expires_at,
+                    quote_json
+                ) VALUES (
+                    %s, 'entitlement-customer', %s, %s,
+                    'XRP', 'xrpl', 'xrp', NULL,
+                    1000000, 6,
+                    'r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2',
+                    'xrp_destination_tag', '123', 'paid', %s, %s
+                )
+                """,
+                (
+                    invoice_id,
+                    plan_code,
+                    price_id,
+                    now + timedelta(minutes=10),
+                    json.dumps({"plan_code": plan_code, "price_id": price_id}),
+                ),
+            )
+            connection.execute(
+                """
+                INSERT INTO subscription_entitlements(
+                    entitlement_id, invoice_id, customer_ref, plan_code,
+                    status, starts_at, expires_at, activated_at
+                ) VALUES (
+                    %s, %s, 'entitlement-customer', %s,
+                    'active', %s, %s, %s
+                )
+                """,
+                (
+                    entitlement_id,
+                    invoice_id,
+                    plan_code,
+                    now - timedelta(hours=2),
+                    now - timedelta(minutes=1),
+                    now - timedelta(hours=2),
+                ),
+            )
+
+        service = SubscriptionBillingService(
+            self.store,
+            policies={"xrpl": ConfirmationPolicy(
+                required_confirmations=1,
+                require_finality=True,
+            )},
+        )
+        changed = service.expire_entitlements(
+            actor="entitlement-expiry-worker",
+            now=now,
+        )
+        self.assertEqual(changed, 1)
+
+        with self.store._pool.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT status
+                FROM subscription_entitlements
+                WHERE entitlement_id = %s
+                """,
+                (entitlement_id,),
+            ).fetchone()
+            audit = connection.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM billing_audit_log
+                WHERE object_id = %s
+                  AND action = 'ENTITLEMENT_EXPIRED'
+                """,
+                (str(entitlement_id),),
+            ).fetchone()
+
+        self.assertEqual(row["status"], "expired")
+        self.assertEqual(audit["count"], 1)
 
     def test_expire_invoices_changes_only_open_states_and_audits(self):
         plan_code = "expiration-" + uuid.uuid4().hex[:12]
