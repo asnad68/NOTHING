@@ -70,6 +70,10 @@ INGESTION_RATE_LIMIT_WINDOW_SECONDS = int(
 INGESTION_RATE_LIMIT_MAX_REQUESTS = int(
     os.getenv("NOTHING_INGESTION_RATE_LIMIT_MAX_REQUESTS", "30")
 )
+TRUST_PROXY_HEADERS = os.getenv(
+    "NOTHING_TRUST_PROXY_HEADERS",
+    "false",
+).lower() in {"1", "true", "yes"}
 
 
 def _repo_root() -> Path:
@@ -261,9 +265,12 @@ class NothingApiHandler(BaseHTTPRequestHandler):
         print("%s - %s" % (self.address_string(), fmt % args))
 
     def _client_key(self) -> str:
-        forwarded = self.headers.get("X-Forwarded-For")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
+        if TRUST_PROXY_HEADERS:
+            forwarded = self.headers.get("X-Forwarded-For")
+            if forwarded:
+                first = forwarded.split(",")[0].strip()
+                if first:
+                    return first
         return self.client_address[0]
 
     def _send(
