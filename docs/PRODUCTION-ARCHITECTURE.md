@@ -302,3 +302,45 @@ The import is idempotent for identical content. Immutable records reject silent 
 The reference API is still read-only.
 
 The production architecture is now defined at the persistence and deployment boundary, but actual production operation still requires an audited deployment, managed credentials, PostgreSQL implementation, TLS/gateway configuration, observability and jurisdiction-specific legal/privacy review.
+
+## Authenticated write ingestion
+
+The reference write path is:
+
+\`\`\`text
+Client
+  |
+  | Authorization: Bearer ...
+  | Idempotency-Key: ...
+  v
+POST /v1/ingestion/bundles
+  |
+  +--> bounded JSON parser
+  +--> request fingerprint
+  +--> idempotency lookup
+  +--> protocol validation
+  +--> affected-graph resolution
+  |
+  v
+BEGIN IMMEDIATE / database transaction
+  |
+  +--> identity revisions + heads
+  +--> evidence
+  +--> verification events + evidence links
+  +--> audit record
+  +--> idempotency record
+  |
+  COMMIT
+\`\`\`
+
+The endpoint accepts only Identity, Evidence and Verification Event records. Procedures remain an operator/governance-controlled immutable resource.
+
+The reference authentication uses one configured bearer credential and a server-derived audit actor. Production should replace this with managed service credentials or a proper authorization boundary appropriate to the deployment.
+
+The write route has a separate rate limiter and does not inherit the public GET CORS wildcard.
+
+## Idempotency retention
+
+The reference database keeps idempotency records without automatic pruning. This is conservative: a retained key cannot silently become associated with a different request.
+
+Production must define an explicit retention policy, namespace strategy and operational rules for expired idempotency records before pruning or key reuse is introduced.
