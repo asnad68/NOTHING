@@ -14,6 +14,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping
+import re
 
 from src.nothing_verify import (
     EVIDENCE_TYPES,
@@ -26,6 +27,8 @@ from src.nothing_verify import (
 )
 
 PROCEDURE_STATUSES = {"DRAFT", "ACTIVE", "DEPRECATED", "RETIRED"}
+PROCEDURE_ID_RE = re.compile(r"^NOTHING-[A-Z0-9-]+$")
+STEP_ID_RE = re.compile(r"^STEP-[0-9]{2}$")
 METHOD_CLASSES = {
     "source_check",
     "domain_control",
@@ -44,7 +47,13 @@ def _require(condition: bool, message: str) -> None:
         raise RelationshipError(message)
 
 
+def _reject_extra_keys(record: Mapping[str, Any], allowed: set[str], field: str) -> None:
+    extras = set(record.keys()) - allowed
+    _require(not extras, f"{field} contains unsupported fields: {sorted(extras)}")
+
+
 def _parse_datetime(value: str, field: str) -> datetime:
+    _require(isinstance(value, str) and bool(value.strip()), f"{field} must be a non-empty string")
     try:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
@@ -64,8 +73,16 @@ def _index_unique(records: list[Mapping[str, Any]], field: str, label: str) -> d
 def validate_procedure(procedure: Mapping[str, Any]) -> None:
     """Validate one procedure record against the procedure contract."""
     _require(isinstance(procedure, Mapping), "procedure must be an object")
+    _reject_extra_keys(
+        procedure,
+        {"id", "version", "title", "description", "status", "method_class", "allowed_results",
+         "requires_evidence", "evidence_types", "steps", "published_at", "deprecated_at",
+         "retired_at", "notes"},
+        "procedure",
+    )
     _require(
-        isinstance(procedure.get("id"), str) and procedure["id"].strip(),
+        isinstance(procedure.get("id"), str)
+        and PROCEDURE_ID_RE.fullmatch(procedure["id"]) is not None, and procedure["id"].strip(),
         "procedure.id must be a non-empty string",
     )
     _require(
@@ -96,9 +113,22 @@ def validate_procedure(procedure: Mapping[str, Any]) -> None:
         "procedure.requires_evidence must be a boolean",
     )
 
+    if "description" in procedure:
+        _require(
+            isinstance(procedure["description"], str) and bool(procedure["description"].strip()),
+            "procedure.description must be a non-empty string",
+        )
+
+    if "notes" in procedure:
+        _require(
+            isinstance(procedure["notes"], str) and bool(procedure["notes"].strip()),
+            "procedure.notes must be a non-empty string",
+        )
+
     if "evidence_types" in procedure:
         evidence_types = procedure["evidence_types"]
         _require(isinstance(evidence_types, list), "procedure.evidence_types must be an array")
+        _require(all(isinstance(item, str) for item in evidence_types), "procedure.evidence_types must contain strings")
         _require(len(evidence_types) == len(set(evidence_types)), "procedure.evidence_types must be unique")
         for evidence_type in evidence_types:
             _require(evidence_type in EVIDENCE_TYPES, "procedure.evidence_types contains an unsupported type")
@@ -108,8 +138,12 @@ def validate_procedure(procedure: Mapping[str, Any]) -> None:
     step_ids: set[str] = set()
     for step in steps:
         _require(isinstance(step, Mapping), "each procedure step must be an object")
+        _reject_extra_keys(step, {"step_id", "description"}, "procedure.step")
         step_id = step.get("step_id")
-        _require(isinstance(step_id, str) and step_id.strip(), "procedure.step_id must be non-empty")
+        _require(
+            isinstance(step_id, str) and STEP_ID_RE.fullmatch(step_id) is not None,
+            "procedure.step_id must match STEP-XX",
+        )
         _require(step_id not in step_ids, f"duplicate procedure step_id: {step_id}")
         step_ids.add(step_id)
         _require(
@@ -155,6 +189,7 @@ def validate_procedure(procedure: Mapping[str, Any]) -> None:
 def validate_procedure_registry(registry: Mapping[str, Any]) -> None:
     """Validate the registry and enforce unique (procedure id, version) pairs."""
     _require(isinstance(registry, Mapping), "procedure registry must be an object")
+    _reject_extra_keys(registry, {"registry_id", "version", "updated_at", "procedures"}, "procedure registry")
     _require(
         registry.get("registry_id") == "NOTHING-PROCEDURE-REGISTRY",
         "invalid procedure registry id",
