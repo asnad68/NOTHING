@@ -305,12 +305,14 @@ class NothingApiHandler(BaseHTTPRequestHandler):
         code: str,
         detail: str,
         instance: str | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> None:
         self._send(
             status,
             _error_payload(status, code, detail, instance),
             content_type="application/problem+json",
             allow_cache=False,
+            extra_headers=extra_headers,
         )
 
     def _check_rate_limit(self) -> bool:
