@@ -1,0 +1,34 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    NOTHING_API_HOST=0.0.0.0 \
+    NOTHING_API_PORT=8080 \
+    NOTHING_STORAGE_BACKEND=postgres \
+    NOTHING_AUTH_MODE=oidc-jwt \
+    NOTHING_TENANCY_MODE=single-tenant
+
+RUN addgroup --system --gid 10001 nothing \
+    && adduser --system --uid 10001 --gid 10001 --no-create-home nothing
+
+WORKDIR /app
+
+COPY requirements-prod.txt .
+RUN python -m pip install --no-cache-dir -r requirements-prod.txt
+
+COPY src ./src
+COPY storage ./storage
+COPY schema ./schema
+COPY procedures ./procedures
+COPY api ./api
+
+RUN chown -R nothing:nothing /app
+
+USER nothing
+
+EXPOSE 8080
+
+STOPSIGNAL SIGTERM
+
+CMD ["python", "-m", "src.nothing_api", "--host", "0.0.0.0", "--port", "8080", "--storage-backend", "postgres", "--auth-mode", "oidc-jwt"]
