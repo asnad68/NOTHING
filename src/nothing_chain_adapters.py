@@ -93,6 +93,7 @@ class EvmJsonRpcAdapter:
     network: str
     expected_chain_id: int = 1
     timeout_seconds: float = 10.0
+    required_confirmations: int = 6
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -197,6 +198,8 @@ class EvmJsonRpcAdapter:
                 success=amount > 0,
                 observed_at=_utc_now(),
                 source="evm-json-rpc",
+                routing_mode="unique_destination",
+                routing_reference=None,
             )
 
         transfer_topic = (
@@ -243,6 +246,8 @@ class EvmJsonRpcAdapter:
                 observed_at=_utc_now(),
                 source="evm-json-rpc",
                 asset_contract=invoice.asset_contract,
+                routing_mode="unique_destination",
+                routing_reference=None,
             )
 
         raise NotFoundError(
@@ -442,6 +447,8 @@ class BitcoinCoreRpcAdapter:
         if not isinstance(chain, dict):
             raise ChainAdapterError("Bitcoin getblockchaininfo response is invalid")
         best_height = int(chain["blocks"])
+        if self.required_confirmations < 1:
+            raise ChainAdapterError("Bitcoin required_confirmations must be at least 1")
 
         block_hash = tx.get("blockhash")
         confirmations = int(tx.get("confirmations", 0) or 0)
@@ -451,7 +458,9 @@ class BitcoinCoreRpcAdapter:
                 finality_status = "orphaned"
             else:
                 finality_status = (
-                    "final" if confirmations >= 1 else "confirmed"
+                    "final"
+                    if confirmations >= self.required_confirmations
+                    else "confirmed"
                 )
         else:
             finality_status = "pending"
@@ -484,6 +493,8 @@ class BitcoinCoreRpcAdapter:
                 success=finality_status != "orphaned",
                 observed_at=_utc_now(),
                 source="bitcoin-core-rpc",
+                routing_mode="unique_destination",
+                routing_reference=None,
             )
 
         raise NotFoundError(
