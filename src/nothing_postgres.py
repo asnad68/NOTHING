@@ -71,6 +71,7 @@ def _retry_serializable_method(function: Callable[..., Any]) -> Callable[..., An
             except (
                 self._SerializationFailure,
                 self._DeadlockDetected,
+                self._UniqueViolation,
             ) as exc:
                 if attempt >= retries:
                     raise StoreError(
@@ -90,6 +91,12 @@ def _translate_database_errors(function: Callable[..., Any]) -> Callable[..., An
         try:
             return function(self, *args, **kwargs)
         except StoreError:
+            raise
+        except (
+            self._SerializationFailure,
+            self._DeadlockDetected,
+            self._UniqueViolation,
+        ):
             raise
         except self._psycopg.Error as exc:
             raise StoreError(
