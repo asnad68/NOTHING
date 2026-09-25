@@ -303,7 +303,7 @@ The import is idempotent for identical content. Immutable records reject silent 
 
 The public resource API is read-only, while authenticated write ingestion is implemented as a separate mutation boundary.
 
-The production architecture is now executable through the authenticated ingestion path and PostgreSQL adapter. Actual internet-facing production operation still requires an audited deployment, managed credentials, TLS/gateway configuration, distributed abuse controls, observability, restore-tested backups and jurisdiction-specific legal/privacy review.
+The production architecture is now executable through the authenticated ingestion path and PostgreSQL adapter. Actual internet-facing production operation still requires an audited deployment. The repository now includes a production OCI image, hardened Kubernetes baseline, explicit managed-secret contract, separate migration/runtime database roles, health/readiness probes, backup/restore operational boundary, and a fail-closed single-tenant deployment mode. Managed TLS/gateway/WAF, distributed abuse controls, observability/alerting, restore drills and jurisdiction-specific legal/privacy review remain environment-level rollout gates.
 
 ## Authenticated write ingestion
 
