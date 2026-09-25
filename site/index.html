@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="NOTHING — transparent business identity verification for humans and machines.">
+  <title>NOTHING — Verify Business Identity</title>
+  <link rel="stylesheet" href="./assets/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./">◇ NOTHING</a>
+    <nav aria-label="Primary">
+      <a href="./verify.html">Verify</a>
+      <a href="https://github.com/asnad68/NOTHING" rel="noreferrer">Repository</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero shell">
+      <div class="eyebrow">BUSINESS IDENTITY &amp; VERIFICATION INFRASTRUCTURE</div>
+      <h1>Verify the claim.<br>See the evidence.<br>Understand the scope.</h1>
+      <p class="lead">
+        NOTHING separates identity, claims, evidence, verification events and procedures
+        so a status can be inspected instead of simply trusted.
+      </p>
+
+      <form class="verify-form" action="./verify.html" method="get">
+        <label for="nothing-id">Nothing ID</label>
+        <div class="input-row">
+          <input id="nothing-id" name="id" value="NTH-000001" pattern="NTH-[0-9]{6}"
+                 autocomplete="off" spellcheck="false" aria-describedby="demo-note">
+          <button type="submit">Verify</button>
+        </div>
+        <p id="demo-note" class="note">The public prototype currently contains synthetic demo data only.</p>
+      </form>
+    </section>
+
+    <section class="feature-grid shell" aria-label="NOTHING model">
+      <article class="feature">
+        <span class="feature-number">01</span>
+        <h2>Identity</h2>
+        <p>A stable project-level reference such as <code>NTH-000001</code>.</p>
+      </article>
+      <article class="feature">
+        <span class="feature-number">02</span>
+        <h2>Evidence</h2>
+        <p>What source or material was considered, when it was collected, and its integrity information.</p>
+      </article>
+      <article class="feature">
+        <span class="feature-number">03</span>
+        <h2>Verification</h2>
+        <p>Which claim was evaluated, using which procedure, with what result and scope.</p>
+      </article>
+      <article class="feature">
+        <span class="feature-number">04</span>
+        <h2>Lifecycle</h2>
+        <p>Historical events remain visible when a later event supersedes an earlier one.</p>
+      </article>
+    </section>
+
+    <section class="principles shell">
+      <div>
+        <div class="eyebrow">DESIGN PRINCIPLE</div>
+        <h2>Collect less. Prove more.</h2>
+      </div>
+      <p>
+        A valid record is not automatically a truthful record. The prototype deliberately
+        exposes the chain behind a result and avoids a universal trust score.
+      </p>
+    </section>
+
+    <section class="demo shell">
+      <div class="demo-panel">
+        <div>
+          <div class="eyebrow">PROTOTYPE</div>
+          <h2>See the verification graph</h2>
+          <p>Open the synthetic example to inspect its claims, evidence, event history and procedure.</p>
+        </div>
+        <a class="button secondary" href="./verify.html?id=NTH-000001">Open demo →</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer shell">
+    <span>NOTHING v0.1 · Prototype / Research</span>
+    <span>◇ Verify before claiming.</span>
+  </footer>
+</body>
+</html>
