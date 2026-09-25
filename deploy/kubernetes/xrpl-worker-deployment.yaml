@@ -35,6 +35,23 @@ spec:
                 name: nothing-api-config
             - secretRef:
                 name: nothing-payment-worker-secrets
+          env:
+            - name: NOTHING_POSTGRES_APPLICATION_NAME
+              value: nothing-payment-worker
+            - name: NOTHING_WORKER_HEARTBEAT_FILE
+              value: /tmp/nothing-xrpl-worker.heartbeat
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - >-
+                  import os,time,sys; p="/tmp/nothing-xrpl-worker.heartbeat";
+                  sys.exit(0 if os.path.exists(p) and time.time()-os.path.getmtime(p) < 30 else 1)
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
           resources:
             requests:
               cpu: 50m
