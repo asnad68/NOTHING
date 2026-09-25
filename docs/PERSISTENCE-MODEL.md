@@ -87,6 +87,18 @@ One immutable row per procedure_id + version.
 
 This is important because old verification events must continue to reference the exact semantics that existed when they were evaluated.
 
+### ingestion_idempotency
+
+One immutable row per authenticated actor + Idempotency-Key.
+
+The row binds a client retry key to:
+
+- request SHA-256 fingerprint
+- assigned ingestion ID
+- accepted status code
+- canonical result
+- original recorded timestamp
+
 ### audit_log
 
 Append-only operator/application audit trail.
