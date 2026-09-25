@@ -415,6 +415,7 @@ class BitcoinCoreRpcAdapter:
     rpc_url: str
     network: str = "bitcoin"
     timeout_seconds: float = 10.0
+    required_confirmations: int = 6
 
     def __post_init__(self) -> None:
         object.__setattr__(
