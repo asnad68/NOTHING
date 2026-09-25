@@ -71,6 +71,26 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
             "verification_events": [event],
         }
 
+    def test_payment_worker_checkpoint_cannot_move_backwards(self):
+        worker = "checkpoint-test"
+        account = "r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2"
+        self.store.set_payment_worker_checkpoint(
+            worker,
+            account,
+            last_tx_hash="TX-200",
+            last_ledger_index=200,
+        )
+        with self.assertRaises(ConflictError):
+            self.store.set_payment_worker_checkpoint(
+                worker,
+                account,
+                last_tx_hash="TX-199",
+                last_ledger_index=199,
+            )
+        checkpoint = self.store.get_payment_worker_checkpoint(worker, account)
+        self.assertEqual(checkpoint["last_tx_hash"], "TX-200")
+        self.assertEqual(checkpoint["last_ledger_index"], 200)
+
     def test_payment_role_has_only_required_billing_privileges(self):
         with self.store._pool.connection() as connection:
             allowed = connection.execute(
