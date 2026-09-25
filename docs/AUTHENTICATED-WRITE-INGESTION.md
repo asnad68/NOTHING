@@ -200,3 +200,21 @@ python -m unittest discover -s tests -v
 \`\`\`
 
 The integration tests cover authentication, idempotency, atomic rollback, immutable-record conflict handling, persistent replay and preservation of public read-only routes.
+
+
+## Completion checklist for the reference implementation
+
+The reference write boundary now has the following invariants:
+
+- Public resource routes do not accept mutation methods.
+- Write ingestion requires bearer authentication.
+- The authenticated audit actor is server-derived.
+- Every write request requires an idempotency key.
+- A reused key is replayed only when its request fingerprint matches.
+- Identity history is revisioned rather than overwritten.
+- Evidence and verification events remain immutable.
+- Exact procedure ID/version references are required.
+- The affected graph is resolved before the transaction commits.
+- The write set, audit records and idempotency record commit together.
+- Verify Web never receives the ingestion credential.
+- The durable reference backend is SQLite; production remains a managed PostgreSQL deployment concern.
