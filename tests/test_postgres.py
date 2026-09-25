@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from src.nothing_postgres import PostgreSQLNothingStore
-from src.nothing_store import NotFoundError
+from src.nothing_store import ConflictError, NotFoundError
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -157,7 +157,7 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
             request_sha256="b" * 64,
             ingestion_id="33333333-3333-4333-8333-333333333333",
         )
-        with self.assertRaises(Exception):
+        with self.assertRaises(ConflictError):
             self.store.ingest_bundle(
                 bundle,
                 actor="postgres-conflict",
