@@ -5,6 +5,7 @@
   "assets": {
     "XRP": {
       "network": "XRPL",
+      "routing_mode": "manual_shared",
       "address": "r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2"
     },
     "USDT": {
@@ -15,10 +16,12 @@
     },
     "ETH": {
       "network": "Ethereum",
+      "routing_mode": "manual_shared",
       "address": "0xE1c90171271B5325beE02592ACc50A510448d03E"
     },
     "BTC": {
       "network": "Bitcoin",
+      "routing_mode": "manual_shared",
       "address": "3ABUrDAmi6w9TRsHuwFgdcDBLvXUzbAfZY"
     }
   },
