@@ -216,6 +216,7 @@ class EvmJsonRpcAdapter:
             "952ba7f163c4a11628f55a7eaa9c3b"
         )
         expected_contract = _norm_evm_address(invoice.asset_contract or "")
+        matching_logs: list[tuple[dict[str, Any], int, str]] = []
         for log in receipt.get("logs", []):
             if _norm_evm_address(log.get("address", "")) != expected_contract:
                 continue
@@ -235,6 +236,16 @@ class EvmJsonRpcAdapter:
             log_index = _hex_int(log.get("logIndex"))
             if log_index is None:
                 raise ChainAdapterError("ERC-20 transfer log has no logIndex")
+            matching_logs.append((log, amount, str(log_index)))
+
+        if len(matching_logs) > 1:
+            raise ChainAdapterError(
+                "multiple matching ERC-20 transfers found in one transaction; "
+                "automatic single-observation verification would be ambiguous"
+            )
+        if len(matching_logs) == 1:
+            _log, amount, log_index_text = matching_logs[0]
+            log_index = int(log_index_text)
             return PaymentObservation(
                 network=self.network,
                 asset_code=invoice.asset_code,
@@ -536,6 +547,7 @@ class XrplJsonRpcAdapter:
 class BitcoinCoreRpcAdapter:
     rpc_url: str
     network: str = "bitcoin"
+    expected_chain: str = "main"
     timeout_seconds: float = 10.0
     required_confirmations: int = 6
 
@@ -558,6 +570,8 @@ class BitcoinCoreRpcAdapter:
             raise ChainAdapterError("Bitcoin network does not match adapter")
         if invoice.asset_kind != "btc_utxo":
             raise ChainAdapterError("Bitcoin adapter requires btc_utxo")
+        if not self.expected_chain.strip():
+            raise ChainAdapterError("Bitcoin expected_chain is required")
 
         tx = self._rpc.call(
             "getrawtransaction",
@@ -569,7 +583,10 @@ class BitcoinCoreRpcAdapter:
         chain = self._rpc.call("getblockchaininfo", [])
         if not isinstance(chain, dict):
             raise ChainAdapterError("Bitcoin getblockchaininfo response is invalid")
-        best_height = int(chain["blocks"])
+        if chain.get("chain") != self.expected_chain:
+            raise ChainAdapterError(
+                "Bitcoin endpoint chain does not match configured network"
+            )
         if self.required_confirmations < 1:
             raise ChainAdapterError("Bitcoin required_confirmations must be at least 1")
 
