@@ -29,11 +29,17 @@
       "minLength": 1
     },
     "description": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "status": {
       "type": "string",
-      "enum": ["DRAFT", "ACTIVE", "DEPRECATED", "RETIRED"]
+      "enum": [
+        "DRAFT",
+        "ACTIVE",
+        "DEPRECATED",
+        "RETIRED"
+      ]
     },
     "method_class": {
       "type": "string",
@@ -85,7 +91,10 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["step_id", "description"],
+        "required": [
+          "step_id",
+          "description"
+        ],
         "properties": {
           "step_id": {
             "type": "string",
@@ -111,7 +120,8 @@
       "format": "date-time"
     },
     "notes": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     }
   },
   "allOf": [
@@ -122,10 +132,14 @@
             "const": "DEPRECATED"
           }
         },
-        "required": ["status"]
+        "required": [
+          "status"
+        ]
       },
       "then": {
-        "required": ["deprecated_at"]
+        "required": [
+          "deprecated_at"
+        ]
       }
     },
     {
@@ -135,11 +149,28 @@
             "const": "RETIRED"
           }
         },
-        "required": ["status"]
+        "required": [
+          "status"
+        ]
       },
       "then": {
-        "required": ["retired_at"]
+        "required": [
+          "retired_at"
+        ]
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "ACTIVE"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {}
     }
   ]
 }
