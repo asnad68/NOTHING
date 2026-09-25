@@ -824,6 +824,49 @@ class SubscriptionBillingService:
         digest = hashlib.sha256(actor.encode("utf-8")).hexdigest()
         return "cust-" + digest
 
+    def list_prices(self) -> list[dict[str, Any]]:
+        with self.store._pool.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT bp.price_id, bp.plan_code,
+                       p.duration_seconds,
+                       bp.asset_code, bp.network, bp.asset_kind,
+                       bp.asset_contract, bp.amount_atomic,
+                       bp.asset_decimals, bp.routing_mode
+                FROM billing_prices bp
+                JOIN subscription_plans p ON p.plan_code = bp.plan_code
+                WHERE bp.active = TRUE
+                  AND p.status = 'active'
+                ORDER BY bp.plan_code ASC, bp.asset_code ASC, bp.network ASC,
+                         bp.price_id ASC
+                """
+            ).fetchall()
+
+        from decimal import Decimal
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            amount_atomic = int(row["amount_atomic"])
+            decimals = int(row["asset_decimals"])
+            result.append(
+                {
+                    "price_id": str(row["price_id"]),
+                    "plan_code": row["plan_code"],
+                    "duration_seconds": int(row["duration_seconds"]),
+                    "asset_code": row["asset_code"],
+                    "network": row["network"],
+                    "asset_kind": row["asset_kind"],
+                    "asset_contract": row["asset_contract"],
+                    "amount_atomic": str(row["amount_atomic"]),
+                    "amount": format(
+                        Decimal(amount_atomic).scaleb(-decimals),
+                        "f",
+                    ),
+                    "asset_decimals": decimals,
+                    "routing_mode": row["routing_mode"],
+                }
+            )
+        return result
+
     def get_invoice(
         self,
         *,
