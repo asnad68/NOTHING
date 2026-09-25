@@ -396,7 +396,8 @@ class XrplJsonRpcAdapter:
         newest_tx_hash: str | None = None
         checkpoint_tx_hash: str | None = None
         checkpoint_ledger_index: int | None = None
-        reached_checkpoint = stop_after_tx_hash is None
+        reached_checkpoint = False
+        scan_completed = False
 
         for _ in range(max_pages):
             params: dict[str, Any] = {
@@ -437,6 +438,7 @@ class XrplJsonRpcAdapter:
                         or tx.get("ledger_index")
                     )
                     reached_checkpoint = True
+                    scan_completed = True
                     break
 
                 validated = bool(item.get("validated"))
@@ -510,10 +512,11 @@ class XrplJsonRpcAdapter:
                                 or tx.get("ledger_index")
                             )
                 reached_checkpoint = stop_after_tx_hash is None
+                scan_completed = True
                 break
             marker = page_marker
 
-        if not reached_checkpoint and marker is not None:
+        if not scan_completed:
             raise ChainAdapterError(
                 "XRPL discovery page limit reached before a durable checkpoint boundary"
             )
