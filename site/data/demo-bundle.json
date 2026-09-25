@@ -1,0 +1,121 @@
+{
+  "demo": true,
+  "bundle_version": "0.1",
+  "resolver_version": "0.1",
+  "identities": [
+    {
+      "nothing_id": "NTH-000001",
+      "version": "0.1",
+      "subject": {
+        "name": "NOTHING Experimental Identity",
+        "type": "business"
+      },
+      "claims": [
+        {
+          "claim_id": "CLM-000001",
+          "statement": "This record is an experimental demonstration of the NOTHING identity model.",
+          "status": "SELF-CLAIMED",
+          "source": {
+            "type": "self_attestation",
+            "reference": "NOTHING project repository"
+          }
+        }
+      ],
+      "revocation": {
+        "status": "NOT_REVOKED"
+      }
+    }
+  ],
+  "evidence": [
+    {
+      "evidence_id": "EVD-000001",
+      "version": "0.1",
+      "type": "web_page",
+      "source": {
+        "reference": "https://example.com",
+        "title": "Example source",
+        "publisher": "Example Publisher",
+        "accessed_at": "2026-09-25T00:00:00Z"
+      },
+      "collected_at": "2026-09-25T00:00:00Z",
+      "integrity": {
+        "method": "none"
+      },
+      "notes": "Synthetic fixture only; not evidence about a real organization."
+    }
+  ],
+  "verification_events": [
+    {
+      "event_id": "VER-000001",
+      "version": "0.1",
+      "occurred_at": "2026-09-25T00:00:00Z",
+      "subject": "NTH-000001",
+      "claim_id": "CLM-000001",
+      "procedure": {
+        "id": "NOTHING-BASIC-SOURCE-CHECK",
+        "version": "0.1"
+      },
+      "verifier": {
+        "type": "hybrid",
+        "identifier": "example-verifier"
+      },
+      "evidence": [
+        "EVD-000001"
+      ],
+      "result": {
+        "status": "SOURCE-VERIFIED",
+        "scope": "The example claim is supported by the referenced example source for this synthetic fixture only.",
+        "reason": "Example event for protocol testing."
+      }
+    }
+  ],
+  "procedure_registry": {
+    "registry_id": "NOTHING-PROCEDURE-REGISTRY",
+    "version": "0.1",
+    "updated_at": "2026-09-25T00:00:00Z",
+    "procedures": [
+      {
+        "id": "NOTHING-BASIC-SOURCE-CHECK",
+        "version": "0.1",
+        "title": "Basic Source Check",
+        "description": "Evaluate whether a claim is supported by an identified source within a narrowly stated scope.",
+        "status": "ACTIVE",
+        "method_class": "source_check",
+        "allowed_results": [
+          "SOURCE-VERIFIED",
+          "NOT-VERIFIED",
+          "INCONCLUSIVE"
+        ],
+        "requires_evidence": true,
+        "evidence_types": [
+          "web_page",
+          "public_record",
+          "authorized_document",
+          "registry_record",
+          "statement",
+          "other"
+        ],
+        "steps": [
+          {
+            "step_id": "STEP-01",
+            "description": "Identify the exact NOTHING subject and claim being evaluated."
+          },
+          {
+            "step_id": "STEP-02",
+            "description": "Identify and record evidence appropriate to the claim."
+          },
+          {
+            "step_id": "STEP-03",
+            "description": "Check whether the evidence supports the stated claim within the declared scope."
+          },
+          {
+            "step_id": "STEP-04",
+            "description": "Record the result, limitations, evidence identifiers, procedure version and timestamp."
+          }
+        ],
+        "published_at": "2026-09-25T00:00:00Z",
+        "notes": "This procedure does not establish legal status, financial condition, reputation, ownership beyond the tested scope, or universal trustworthiness."
+      }
+    ]
+  }
+}
