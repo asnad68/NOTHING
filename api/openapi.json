@@ -896,6 +896,86 @@
           }
         }
       }
+    },
+    "/v1/identity/{nothing_id}/verification-events": {
+      "get": {
+        "tags": [
+          "Verification"
+        ],
+        "summary": "List the verification-event history for one identity",
+        "operationId": "listIdentityVerificationEvents",
+        "security": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/NothingId"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Verification-event history for the requested identity.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationEventHistoryResponse"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The representation has not changed.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Last-Modified": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid NOTHING identifier.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested identity does not exist.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded.",
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/RetryAfter"
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2148,6 +2228,42 @@
                 }
               }
             }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ApiMeta"
+          }
+        }
+      },
+      "VerificationEventHistoryView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "nothing_id",
+          "events"
+        ],
+        "properties": {
+          "nothing_id": {
+            "type": "string",
+            "pattern": "^NTH-[0-9]{6}$"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VerificationEventView"
+            }
+          }
+        }
+      },
+      "VerificationEventHistoryResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/VerificationEventHistoryView"
           },
           "meta": {
             "$ref": "#/components/schemas/ApiMeta"
