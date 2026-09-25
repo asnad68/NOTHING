@@ -2,7 +2,7 @@
 
 ## Scope
 
-The first API contract is read-only. It exposes the resolved NOTHING graph without exposing an internal database model.
+The first API contract is read-only. It exposes the resolved NOTHING graph without exposing an internal database model. The API layer is storage-agnostic and is designed to run against the demo filesystem backend or a durable persistence backend.
 
 The contract is deployment-neutral: no production API hostname is assumed yet.
 
@@ -15,6 +15,14 @@ The contract is deployment-neutral: no production API hostname is assumed yet.
 Breaking API behavior changes require a new major path version. Changes to the underlying NOTHING data protocol require a protocol version change and must not silently reinterpret historical records.
 
 ## Resources
+
+### GET /healthz
+
+Returns a minimal process liveness response. It does not expose storage details.
+
+### GET /readyz
+
+Returns whether the configured storage backend is currently reachable. A non-ready response uses HTTP 503.
 
 ### GET /v1/identity/{nothing_id}
 
@@ -106,4 +114,6 @@ A valid HTTP response is not an independent statement that every external source
 
 This file and `api/openapi.json` define the contract.
 
-The API server itself is **not implemented yet**. The next implementation step is a reference read-only server that consumes the existing resolver rather than duplicating verification logic.
+The reference API server is implemented in `src/nothing_api.py`. It consumes the storage port from `src/nothing_store.py` and delegates verification semantics to `src/nothing_protocol.py`.
+
+The production deployment target remains a stateless API tier behind TLS/WAF/API-gateway infrastructure with a PostgreSQL-compatible persistence layer.
