@@ -31,6 +31,7 @@ from src.nothing_ingestion import (
 )
 from src.nothing_protocol import RelationshipError, resolve_claim_relationships
 from src.nothing_store import (
+    ConflictError,
     FilesystemNothingStore,
     NothingStore,
     NotFoundError,
