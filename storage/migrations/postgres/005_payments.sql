@@ -239,6 +239,7 @@ GRANT SELECT, INSERT, UPDATE ON payment_events TO nothing_app;
 GRANT SELECT, INSERT ON payment_allocations TO nothing_app;
 GRANT SELECT, INSERT, UPDATE ON subscription_entitlements TO nothing_app;
 GRANT INSERT ON billing_audit_log TO nothing_app;
+GRANT USAGE, SELECT ON SEQUENCE billing_audit_log_audit_id_seq TO nothing_app;
 
 ALTER TABLE subscription_plans OWNER TO nothing_migrator;
 ALTER TABLE billing_prices OWNER TO nothing_migrator;
