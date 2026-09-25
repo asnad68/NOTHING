@@ -378,11 +378,32 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
                 )
             self.assertIn("checkpoint cannot move backwards", str(context.exception).lower())
 
+    def test_payment_worker_checkpoint_account_is_database_immutable(self):
+        worker = "checkpoint-account-db-guard"
+        account = "r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2"
+        self.store.set_payment_worker_checkpoint(
+            worker,
+            account,
+            last_tx_hash="TX-200",
+            last_ledger_index=200,
+        )
+        with self.store._pool.connection() as connection:
+            with self.assertRaises(Exception) as context:
+                connection.execute(
+                    """
+                    UPDATE payment_worker_checkpoints
+                    SET account = 'rNEWACCOUNT'
+                    WHERE worker_name = %s
+                    """,
+                    (worker,),
+                )
+            self.assertIn("checkpoint identity is immutable", str(context.exception).lower())
+
     def test_readiness_fails_when_schema_version_is_behind(self):
         with self.store._pool.connection() as connection:
             connection.execute(
                 "DELETE FROM schema_migrations WHERE version = %s",
-                (11,),
+                (12,),
             )
         try:
             self.assertFalse(self.store.health())
@@ -391,7 +412,7 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
                 connection.execute(
                     "INSERT INTO schema_migrations(version) VALUES (%s) "
                     "ON CONFLICT (version) DO NOTHING",
-                    (11,),
+                    (12,),
                 )
         self.assertTrue(self.store.health())
 
