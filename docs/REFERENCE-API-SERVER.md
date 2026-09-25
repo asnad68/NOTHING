@@ -26,7 +26,7 @@ python -m src.nothing_api --storage-backend sqlite --db-path data/nothing.db
 ```
 ```
 
-Environment variables supported by the reference implementation include `NOTHING_API_HOST`, `NOTHING_API_PORT`, `NOTHING_DATA_ROOT`, `NOTHING_RATE_WINDOW_SECONDS`, `NOTHING_RATE_LIMIT_MAX_REQUESTS`, `NOTHING_AUTH_MODE` and the production JWT settings documented in `docs/PRODUCTION-AUTHORIZATION.md`.
+Environment variables supported by the reference implementation include `NOTHING_API_HOST`, `NOTHING_API_PORT`, `NOTHING_DATA_ROOT`, `NOTHING_RATE_WINDOW_SECONDS`, `NOTHING_RATE_LIMIT_MAX_REQUESTS`, `NOTHING_AUTH_MODE`, `NOTHING_TRUST_PROXY_HEADERS` and the production JWT settings documented in `docs/PRODUCTION-AUTHORIZATION.md`.
 
 ## Endpoints
 
