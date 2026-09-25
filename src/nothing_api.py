@@ -248,6 +248,12 @@ class RateLimiter:
             return True
 
 
+HTTP_REQUEST_TIMEOUT_SECONDS = max(
+    1.0,
+    float(os.getenv("NOTHING_HTTP_REQUEST_TIMEOUT_SECONDS", "15")),
+)
+
+
 RATE_LIMITER = RateLimiter(RATE_LIMIT_WINDOW_SECONDS, RATE_LIMIT_MAX_REQUESTS)
 INGESTION_RATE_LIMITER = RateLimiter(
     INGESTION_RATE_LIMIT_WINDOW_SECONDS,
@@ -288,6 +294,10 @@ class NothingApiHandler(BaseHTTPRequestHandler):
     server_version = "NOTHING-Reference/0.2"
     protocol_version = "HTTP/1.1"
 
+    def setup(self) -> None:
+        super().setup()
+        self.connection.settimeout(HTTP_REQUEST_TIMEOUT_SECONDS)
+
     @property
     def store(self) -> NothingStore:
         return self.server.store  # type: ignore[attr-defined]
@@ -325,11 +335,20 @@ class NothingApiHandler(BaseHTTPRequestHandler):
         sys.stdout.flush()
 
     def log_message(self, fmt: str, *args: Any) -> None:
-        # Avoid logging Authorization, cookies or request bodies.
+        # Avoid logging Authorization, cookies, request bodies, or query strings.
+        try:
+            message = fmt % args
+        except Exception:
+            message = fmt
+        request_target = self.path.split("?", 1)[0]
+        if self.path != request_target:
+            message = message.replace(self.path, request_target)
         record = {
             "event": "http_message",
             "request_id": self._request_id(),
-            "message": fmt % args,
+            "method": self.command,
+            "path": request_target,
+            "message": message,
         }
         sys.stdout.write(json.dumps(record, sort_keys=True) + "\\n")
         sys.stdout.flush()
