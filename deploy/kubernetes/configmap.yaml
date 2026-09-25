@@ -5,6 +5,7 @@ metadata:
   namespace: nothing
 data:
   NOTHING_STORAGE_BACKEND: postgres
+  NOTHING_POSTGRES_AUTO_MIGRATE: "false"
   NOTHING_AUTH_MODE: oidc-jwt
   NOTHING_TENANCY_MODE: single-tenant
   NOTHING_API_HOST: 0.0.0.0
