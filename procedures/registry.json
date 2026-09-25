@@ -1,0 +1,49 @@
+{
+  "registry_id": "NOTHING-PROCEDURE-REGISTRY",
+  "version": "0.1",
+  "updated_at": "2026-09-25T00:00:00Z",
+  "procedures": [
+    {
+      "id": "NOTHING-BASIC-SOURCE-CHECK",
+      "version": "0.1",
+      "title": "Basic Source Check",
+      "description": "Evaluate whether a claim is supported by an identified source within a narrowly stated scope.",
+      "status": "ACTIVE",
+      "method_class": "source_check",
+      "allowed_results": [
+        "SOURCE-VERIFIED",
+        "NOT-VERIFIED",
+        "INCONCLUSIVE"
+      ],
+      "requires_evidence": true,
+      "evidence_types": [
+        "web_page",
+        "public_record",
+        "authorized_document",
+        "registry_record",
+        "statement",
+        "other"
+      ],
+      "steps": [
+        {
+          "step_id": "STEP-01",
+          "description": "Identify the exact NOTHING subject and claim being evaluated."
+        },
+        {
+          "step_id": "STEP-02",
+          "description": "Identify and record evidence appropriate to the claim."
+        },
+        {
+          "step_id": "STEP-03",
+          "description": "Check whether the evidence supports the stated claim within the declared scope."
+        },
+        {
+          "step_id": "STEP-04",
+          "description": "Record the result, limitations, evidence identifiers, procedure version and timestamp."
+        }
+      ],
+      "published_at": "2026-09-25T00:00:00Z",
+      "notes": "This procedure does not establish legal status, financial condition, reputation, ownership beyond the tested scope, or universal trustworthiness."
+    }
+  ]
+}
