@@ -5,6 +5,7 @@ from src.nothing_payments import PaymentInvoice
 
 from src.nothing_chain_adapters import (
     BitcoinCoreRpcAdapter,
+    ChainAdapterError,
     EvmJsonRpcAdapter,
     XrplJsonRpcAdapter,
 )
@@ -165,7 +166,7 @@ class ChainAdapterTests(unittest.TestCase):
             FakeRpc({"account_tx": page}),
         )
 
-        with self.assertRaises(Exception) as context:
+        with self.assertRaises(ChainAdapterError) as context:
             adapter.discover_recent_payments_with_checkpoint(
                 account="r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2",
                 stop_after_tx_hash=None,
