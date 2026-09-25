@@ -22,6 +22,11 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
+from src.nothing_auth import (
+    AuthenticatedPrincipal,
+    AuthConfigurationError,
+    OIDCJwtAuthenticator,
+)
 from src.nothing_ingestion import (
     BearerAuthenticator,
     IngestionRequestError,
@@ -402,16 +407,31 @@ class NothingApiHandler(BaseHTTPRequestHandler):
             )
             return
 
-        if not self.ingestion_authenticator.authenticate(
+        principal = self.ingestion_authenticator.authenticate(
             self.headers.get("Authorization")
-        ):
+        )
+        if principal is None:
             self._send_problem(
                 401,
                 "UNAUTHORIZED",
-                "A valid bearer credential is required for write ingestion.",
+                "A valid bearer access token is required for write ingestion.",
                 extra_headers={
-                    "WWW-Authenticate": 'Bearer realm="NOTHING ingestion"',
+                    "WWW-Authenticate": (
+                        'Bearer realm="NOTHING ingestion", '
+                        'error="invalid_token"'
+                    ),
                 },
+            )
+            return
+
+        if not self.ingestion_authenticator.authorize(
+            principal,
+            "nothing:ingest",
+        ):
+            self._send_problem(
+                403,
+                "FORBIDDEN",
+                "The access token lacks the required write-ingestion permission.",
             )
             return
 
@@ -493,7 +513,7 @@ class NothingApiHandler(BaseHTTPRequestHandler):
         try:
             result = self.store.ingest_bundle(
                 parsed.bundle,
-                actor=self.ingestion_authenticator.actor,
+                actor=principal.actor if isinstance(principal, AuthenticatedPrincipal) else self.ingestion_authenticator.actor,
                 idempotency_key=idempotency_key,
                 request_sha256=parsed.request_sha256,
                 ingestion_id=ingestion_id,
@@ -785,29 +805,54 @@ def build_server(
     db_path: str | Path | None = None,
     ingestion_token: str | None = None,
     ingestion_actor: str | None = None,
+    auth_mode: str | None = None,
 ) -> NothingHttpServer:
     owns_store = store is None
+    selected_backend = storage_backend or DEFAULT_BACKEND
     if store is None:
-        selected_backend = storage_backend or DEFAULT_BACKEND
         if selected_backend == "sqlite":
             store = SQLiteNothingStore(
                 db_path or DEFAULT_DB_PATH,
                 demo=False,
             )
+        elif selected_backend == "postgres":
+            from src.nothing_postgres import PostgreSQLNothingStore
+
+            store = PostgreSQLNothingStore.from_environment()
         elif selected_backend == "filesystem":
             store = FilesystemNothingStore(data_root or _repo_root())
         else:
             raise ValueError(f"unsupported storage backend: {selected_backend}")
+
+    selected_auth_mode = (
+        auth_mode
+        or os.getenv("NOTHING_AUTH_MODE")
+        or ("oidc-jwt" if selected_backend == "postgres" else "static-bearer")
+    )
+    if selected_backend == "postgres" and selected_auth_mode != "oidc-jwt":
+        raise AuthConfigurationError(
+            "the PostgreSQL production backend requires NOTHING_AUTH_MODE=oidc-jwt"
+        )
+
+    if selected_auth_mode == "oidc-jwt":
+        ingestion_authenticator = OIDCJwtAuthenticator.from_environment()
+    elif selected_auth_mode == "static-bearer":
+        ingestion_authenticator = BearerAuthenticator(
+            ingestion_token,
+            actor=ingestion_actor,
+        )
+    else:
+        raise AuthConfigurationError(
+            "unsupported authentication mode: "
+            f"{selected_auth_mode}"
+        )
 
     return NothingHttpServer(
         (host, port),
         NothingApiHandler,
         store=store,
         owns_store=owns_store,
-        ingestion_authenticator=BearerAuthenticator(
-            ingestion_token,
-            actor=ingestion_actor,
-        ),
+        ingestion_authenticator=ingestion_authenticator,
     )
 
 
@@ -826,7 +871,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--storage-backend",
-        choices=("filesystem", "sqlite"),
+        choices=("filesystem", "sqlite", "postgres"),
         default=DEFAULT_BACKEND,
     )
     parser.add_argument(
