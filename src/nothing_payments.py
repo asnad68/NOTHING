@@ -25,6 +25,7 @@ InvoiceStatus = Literal[
 
 FinalityStatus = Literal["pending", "confirmed", "final", "orphaned"]
 AssetKind = Literal["native", "erc20", "xrp", "btc_utxo"]
+RoutingMode = Literal["unique_destination", "xrp_destination_tag", "manual_shared"]
 
 
 class PaymentValidationError(ValueError):
@@ -44,6 +45,8 @@ class PaymentInvoice:
     destination: str
     expires_at: datetime
     asset_contract: str | None = None
+    routing_mode: RoutingMode = "manual_shared"
+    routing_reference: str | None = None
 
 
 @dataclass(frozen=True)
@@ -62,6 +65,8 @@ class PaymentObservation:
     observed_at: datetime
     source: str
     asset_contract: str | None = None
+    routing_mode: RoutingMode = "manual_shared"
+    routing_reference: str | None = None
 
 
 @dataclass(frozen=True)
@@ -100,6 +105,10 @@ def validate_invoice(invoice: PaymentInvoice) -> None:
         raise PaymentValidationError("destination is required")
     if invoice.asset_kind == "erc20" and not invoice.asset_contract:
         raise PaymentValidationError("ERC-20 payments require asset_contract")
+    if invoice.routing_mode == "xrp_destination_tag" and not invoice.routing_reference:
+        raise PaymentValidationError("XRP tagged invoices require routing_reference")
+    if invoice.routing_mode == "unique_destination" and not invoice.destination:
+        raise PaymentValidationError("unique_destination invoices require destination")
 
 
 def validate_observation(observation: PaymentObservation) -> None:
@@ -122,6 +131,8 @@ def validate_observation(observation: PaymentObservation) -> None:
         raise PaymentValidationError("source is required")
     if observation.asset_kind == "erc20" and not observation.asset_contract:
         raise PaymentValidationError("ERC-20 observations require asset_contract")
+    if observation.routing_mode == "xrp_destination_tag" and not observation.routing_reference:
+        raise PaymentValidationError("XRP tagged observations require routing_reference")
 
 
 def chain_event_key(
@@ -168,6 +179,18 @@ def classify_invoice(
     validate_invoice(invoice)
     _require_utc(now, "now")
 
+    if invoice.routing_mode == "manual_shared":
+        return PaymentDecision(
+            invoice_status="review_required",
+            received_atomic=0,
+            due_atomic=invoice.amount_atomic,
+            shortfall_atomic=invoice.amount_atomic,
+            excess_atomic=0,
+            eligible_for_allocation=False,
+            eligible_for_entitlement=False,
+            reason="automatic settlement is disabled for a shared receiving destination",
+        )
+
     if required_confirmations < 0:
         raise PaymentValidationError("required_confirmations cannot be negative")
 
@@ -194,6 +217,8 @@ def classify_invoice(
             or observation.asset_kind != invoice.asset_kind
             or observation.destination != invoice.destination
             or observation.asset_contract != invoice.asset_contract
+            or observation.routing_mode != invoice.routing_mode
+            or observation.routing_reference != invoice.routing_reference
             or not observation.success
             or observation.finality_status == "orphaned"
         ):
@@ -217,6 +242,8 @@ def classify_invoice(
             and observation.asset_kind == invoice.asset_kind
             and observation.destination == invoice.destination
             and observation.asset_contract == invoice.asset_contract
+            and observation.routing_mode == invoice.routing_mode
+            and observation.routing_reference == invoice.routing_reference
             and observation.success
             and observation.finality_status in {"pending", "confirmed"}
             for observation in observations
