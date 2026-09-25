@@ -4,6 +4,8 @@ This module deliberately does not persist data and does not implement verificati
 semantics. Protocol validation remains in the existing validators and resolver.
 """
 
+from src.nothing_auth import AuthenticatedPrincipal
+
 from __future__ import annotations
 
 import hashlib
@@ -25,6 +27,7 @@ INGESTION_MAX_RECORDS = max(
 IDEMPOTENCY_KEY_RE = re.compile(r"^[\x21-\x7E]{1,255}$")
 BEARER_TOKEN_RE = re.compile(r"^[A-Za-z0-9\-._~+/]+=*$")
 BUNDLE_KEYS = ("identities", "evidence", "verification_events")
+DEFAULT_STATIC_SCOPE = "nothing:ingest"
 
 
 class IngestionRequestError(ValueError):
@@ -57,19 +60,39 @@ class BearerAuthenticator:
     def configured(self) -> bool:
         return isinstance(self.token, str) and bool(self.token)
 
-    def authenticate(self, authorization: str | None) -> bool:
+    def authenticate(
+        self,
+        authorization: str | None,
+    ) -> AuthenticatedPrincipal | None:
         if not self.configured or not authorization:
-            return False
+            return None
 
         parts = authorization.strip().split()
         if len(parts) != 2 or parts[0].lower() != "bearer":
-            return False
+            return None
 
         token = parts[1]
         if not BEARER_TOKEN_RE.fullmatch(token):
-            return False
+            return None
 
-        return hmac.compare_digest(token, self.token or "")
+        if not hmac.compare_digest(token, self.token or ""):
+            return None
+
+        return AuthenticatedPrincipal(
+            actor=self.actor,
+            subject=self.actor,
+            issuer="urn:nothing:static-bearer",
+            client_id=self.actor,
+            scopes=frozenset({DEFAULT_STATIC_SCOPE}),
+            claims={},
+        )
+
+    def authorize(
+        self,
+        principal: AuthenticatedPrincipal,
+        action: str,
+    ) -> bool:
+        return action == DEFAULT_STATIC_SCOPE
 
 
 def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
