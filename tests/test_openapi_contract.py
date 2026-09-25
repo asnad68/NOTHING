@@ -109,6 +109,51 @@ class OpenApiContractTests(unittest.TestCase):
 
 
 
+
+    def test_billing_contract_is_customer_scoped_and_authenticated(self) -> None:
+        paths = self.spec["paths"]
+
+        create = paths["/v1/billing/invoices"]["post"]
+        self.assertEqual(create["security"], [{"BearerAuth": []}])
+        self.assertIn(
+            "Idempotency-Key",
+            {
+                self.resolve_ref(parameter)["name"]
+                for parameter in create["parameters"]
+            },
+        )
+        self.assertEqual(
+            create["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/BillingInvoiceCreateRequest",
+        )
+        for status in ("200", "400", "401", "403", "404", "409", "413", "415", "503"):
+            self.assertIn(status, create["responses"])
+
+        get_invoice = paths["/v1/billing/invoices/{invoice_id}"]["get"]
+        self.assertEqual(get_invoice["security"], [{"BearerAuth": []}])
+        self.assertEqual(
+            self.resolve_ref(get_invoice["parameters"][0])["name"],
+            "invoice_id",
+        )
+        self.assertEqual(
+            get_invoice["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/BillingInvoiceResponse",
+        )
+
+        entitlements = paths["/v1/billing/entitlements"]["get"]
+        self.assertEqual(entitlements["security"], [{"BearerAuth": []}])
+        self.assertEqual(
+            entitlements["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/EntitlementListResponse",
+        )
+
+        request_schema = self.spec["components"]["schemas"]["BillingInvoiceCreateRequest"]
+        self.assertFalse(request_schema["additionalProperties"])
+        self.assertEqual(
+            set(request_schema["properties"]),
+            {"plan_code", "price_id", "expires_in_seconds"},
+        )
+
     def test_authenticated_ingestion_contract(self) -> None:
         operation = self.spec["paths"]["/v1/ingestion/bundles"]["post"]
         self.assertEqual(operation["security"], [{"BearerAuth": []}])
