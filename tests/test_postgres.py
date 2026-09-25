@@ -826,6 +826,22 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
             observation=event,
             actor="billing-test",
         )
+        service.record_unmatched_observation(
+            observation=event,
+            actor="billing-test",
+        )
+        with self.store._pool.connection() as connection:
+            audit_count = connection.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM billing_audit_log
+                WHERE action = 'PAYMENT_UNMATCHED'
+                  AND object_type = 'payment_event'
+                  AND details_json LIKE %s
+                """,
+                ("%btc-manual-reconcile%",),
+            ).fetchone()["count"]
+        self.assertEqual(audit_count, 1)
         queue = service.list_unallocated_payments(limit=1000)
         matching = [item for item in queue if item["tx_hash"] == event.tx_hash]
         self.assertEqual(len(matching), 1)
@@ -1022,6 +1038,19 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
 
         self.assertEqual(row["status"], "expired")
         self.assertEqual(audit["count"], 1)
+        self.assertFalse(
+            service.has_active_entitlement(
+                customer_ref="entitlement-customer",
+                plan_code=plan_code,
+                now=now,
+            )
+        )
+        with self.assertRaises(ConflictError):
+            service.require_active_entitlement(
+                customer_ref="entitlement-customer",
+                plan_code=plan_code,
+                now=now,
+            )
 
     def test_expire_invoices_changes_only_open_states_and_audits(self):
         plan_code = "expiration-" + uuid.uuid4().hex[:12]
