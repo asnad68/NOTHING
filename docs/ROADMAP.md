@@ -85,6 +85,9 @@
 - [x] Define payment routing and duplicate-payment invariants
 - [x] Implement receive-only chain observation adapters
 - [x] Implement PostgreSQL payment allocation and entitlement activation boundary
+- [x] Implement entitlement access enforcement boundary
+- [x] Harden PostgreSQL runtime update privileges and checkpoint invariants
+- [x] Bind billing idempotency to the complete authenticated request
 - [x] Implement authenticated customer billing API boundary
 - [x] Implement XRPL checkpointed payment worker
 - [x] Implement authenticated billing price catalog/invoice/entitlement reads
