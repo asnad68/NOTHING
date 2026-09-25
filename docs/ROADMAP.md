@@ -53,7 +53,7 @@
 - [x] Production PostgreSQL adapter and migration system
 - [x] Production JWT authentication and scope authorization
 - [x] Serializable transaction/retry and concurrency hardening
-- [ ] Managed production deployment, secrets and operational controls
+- [x] Production deployment boundary: OCI image, hardened Kubernetes baseline, secret contract, migration/runtime role separation, health/readiness, backup/restore runbook, observability requirements, and fail-closed single-tenant boundary
 
 - [x] Define separate authenticated write-ingestion boundary
 - [x] Require bearer authentication and idempotency for writes
