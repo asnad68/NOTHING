@@ -65,3 +65,22 @@ Production deployment must preserve the same dependency direction: HTTP transpor
 ## Production work still required
 
 The repository now defines the production persistence/deployment boundary and provides a durable SQLite reference implementation. Actual production use still requires PostgreSQL implementation, managed credentials, TLS/gateway controls, distributed abuse controls, structured observability, restore-tested backups, origin-specific CORS, authenticated write ingestion and a security/privacy/legal review.
+
+## Authenticated ingestion
+
+\`POST /v1/ingestion/bundles\` is the only mutation route in the reference server.
+
+It requires:
+
+- Bearer authentication
+- \`Content-Type: application/json\`
+- \`Idempotency-Key\`
+
+It accepts Identity, Evidence and Verification Event records. The server resolves the affected graph before committing the write set.
+
+The filesystem backend returns \`503 WRITE_INGESTION_UNAVAILABLE\`. The durable SQLite backend provides the transactional implementation and persistent idempotency records.
+
+Procedure versions are not writable through the endpoint.
+
+The public GET API and Verify Web remain read-only.
+
