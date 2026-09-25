@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -43,6 +44,28 @@ class ConfirmationPolicy:
             )
 
 
+def _retry_billing_transaction(function):
+    @wraps(function)
+    def wrapper(self: "SubscriptionBillingService", *args: Any, **kwargs: Any) -> Any:
+        retries = self.store._serialization_retries
+        for attempt in range(retries + 1):
+            try:
+                return function(self, *args, **kwargs)
+            except (
+                self.store._SerializationFailure,
+                self.store._DeadlockDetected,
+                self.store._UniqueViolation,
+            ) as exc:
+                if attempt >= retries:
+                    raise StoreError(
+                        "billing transaction could not complete after retries"
+                    ) from exc
+                delay = self.store._retry_backoff_seconds * (2 ** attempt)
+                if delay:
+                    time.sleep(delay)
+        raise AssertionError("unreachable")
+
+
 class SubscriptionBillingService:
     """Atomic invoice -> payment allocation -> entitlement boundary."""
 
@@ -63,6 +86,7 @@ class SubscriptionBillingService:
                 f"no settlement confirmation policy configured for network {network}"
             ) from exc
 
+    @_retry_billing_transaction
     def create_invoice(
         self,
         *,
@@ -435,6 +459,7 @@ class SubscriptionBillingService:
         )
         return payment["payment_event_id"]
 
+    @_retry_billing_transaction
     def settle_observation(
         self,
         *,
@@ -744,6 +769,7 @@ class SubscriptionBillingService:
         return str(entitlement_id)
 
     @staticmethod
+    @_retry_billing_transaction
     def expire_invoices(
         self,
         *,
@@ -767,8 +793,8 @@ class SubscriptionBillingService:
                 WHERE status IN ('open', 'confirming', 'underpaid')
                   AND expires_at < %s
                 ORDER BY expires_at ASC
-                FOR UPDATE
                 LIMIT %s
+                FOR UPDATE
                 """,
                 (effective_now.astimezone(timezone.utc), limit),
             ).fetchall()
@@ -964,6 +990,7 @@ class SubscriptionBillingService:
         )
 
 
+    @_retry_billing_transaction
     def manual_reconcile_payment(
         self,
         *,
@@ -977,6 +1004,8 @@ class SubscriptionBillingService:
             payment_uuid = uuid.UUID(payment_event_id)
         except (TypeError, ValueError) as exc:
             raise PaymentValidationError("payment_event_id must be a UUID") from exc
+
+        now = datetime.now(timezone.utc)
 
         with self.store._transaction(retryable=True) as connection:
             payment = connection.execute(
@@ -1028,11 +1057,20 @@ class SubscriptionBillingService:
                 payment["network"] != invoice["network"]
                 or payment["asset_code"] != invoice["asset_code"]
                 or payment["asset_kind"] != invoice["asset_kind"]
-                or payment["asset_contract"] is not None
-                    and payment["asset_contract"] != invoice["asset_contract"]
+                or (
+                    payment["asset_contract"] != invoice["asset_contract"]
+                    if payment["asset_contract"] is not None
+                    else invoice["asset_contract"] is not None
+                )
                 or payment["destination"] != invoice["destination"]
             ):
                 raise ConflictError("payment and invoice asset/destination do not match")
+
+            if invoice["routing_mode"] != "manual_shared" and (
+                payment["routing_mode"] != invoice["routing_mode"]
+                or payment["routing_reference"] != invoice["routing_reference"]
+            ):
+                raise ConflictError("payment and invoice routing do not match")
 
             invoice_model = PaymentInvoice(
                 invoice_id=str(invoice["invoice_id"]),
@@ -1096,7 +1134,7 @@ class SubscriptionBillingService:
                     paid_at = COALESCE(paid_at, %s)
                 WHERE invoice_id = %s
                 """,
-                ("overpaid" if excess else "paid", effective_now if (effective_now := datetime.now(timezone.utc)) else None, invoice_id),
+                ("overpaid" if excess else "paid", now, invoice_id),
             )
             self._ensure_entitlement(
                 connection,
@@ -1108,6 +1146,7 @@ class SubscriptionBillingService:
             )
             return self._settlement_snapshot(connection, invoice_id)
 
+    @_retry_billing_transaction
     def record_unmatched_observation(
         self,
         *,
