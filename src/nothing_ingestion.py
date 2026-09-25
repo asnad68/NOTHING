@@ -4,9 +4,9 @@ This module deliberately does not persist data and does not implement verificati
 semantics. Protocol validation remains in the existing validators and resolver.
 """
 
-from src.nothing_auth import AuthenticatedPrincipal
-
 from __future__ import annotations
+
+from src.nothing_auth import AuthenticatedPrincipal
 
 import hashlib
 import hmac
