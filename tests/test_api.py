@@ -20,10 +20,15 @@ class ReferenceApiHttpTests(unittest.TestCase):
         cls.server.server_close()
         cls.thread.join(timeout=5)
 
-    def request(self, path: str, headers: dict[str, str] | None = None):
+    def request(
+        self,
+        path: str,
+        headers: dict[str, str] | None = None,
+        method: str = "GET",
+    ):
         connection = http.client.HTTPConnection(self.host, self.port, timeout=5)
         try:
-            connection.request("GET", path, headers=headers or {})
+            connection.request(method, path, headers=headers or {})
             response = connection.getresponse()
             body = response.read()
             return response, body
@@ -89,6 +94,24 @@ class ReferenceApiHttpTests(unittest.TestCase):
         self.assertEqual(second_response.status, 304)
         self.assertEqual(second_response.getheader("ETag"), etag)
         self.assertEqual(second_body, b"")
+
+    def test_write_methods_are_rejected(self) -> None:
+        for method in ("POST", "PUT", "PATCH", "DELETE"):
+            with self.subTest(method=method):
+                response, body = self.request("/v1/identity/NTH-000001", method=method)
+                self.assertEqual(response.status, 405)
+                self.assertEqual(response.getheader("Allow"), "GET, OPTIONS")
+                self.assertEqual(body, b"")
+
+    def test_options_returns_cors_preflight(self) -> None:
+        response, body = self.request(
+            "/v1/identity/NTH-000001",
+            method="OPTIONS",
+        )
+        self.assertEqual(response.status, 204)
+        self.assertEqual(response.getheader("Access-Control-Allow-Origin"), "*")
+        self.assertEqual(response.getheader("Access-Control-Allow-Methods"), "GET, OPTIONS")
+        self.assertEqual(body, b"")
 
     def test_unknown_route_returns_404_problem(self) -> None:
         response, body = self.request("/v1/unknown")
