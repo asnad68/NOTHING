@@ -1,4 +1,7 @@
 import unittest
+from datetime import datetime, timezone
+
+from src.nothing_payments import PaymentInvoice
 
 from src.nothing_chain_adapters import EvmJsonRpcAdapter, XrplJsonRpcAdapter
 
@@ -29,9 +32,7 @@ class ChainAdapterTests(unittest.TestCase):
             }
         }
         object.__setattr__(adapter, "_rpc", FakeRpc(responses))
-        invoice = __import__(
-            "src.nothing_payments", fromlist=["PaymentInvoice"]
-        ).PaymentInvoice(
+        invoice = PaymentInvoice(
             invoice_id="inv",
             customer_ref="cust",
             plan_code="xrp-monthly",
@@ -41,9 +42,7 @@ class ChainAdapterTests(unittest.TestCase):
             amount_atomic=2500000,
             asset_decimals=6,
             destination="r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2",
-            expires_at=__import__(
-                "datetime"
-            ).datetime.now(__import__("datetime").timezone.utc),
+            expires_at=datetime.now(timezone.utc),
             routing_mode="xrp_destination_tag",
             routing_reference="123456",
         )
