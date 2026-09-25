@@ -91,6 +91,7 @@ def _norm_evm_address(value: str) -> str:
 class EvmJsonRpcAdapter:
     rpc_url: str
     network: str
+    expected_chain_id: int = 1
     timeout_seconds: float = 10.0
 
     def __post_init__(self) -> None:
@@ -106,6 +107,9 @@ class EvmJsonRpcAdapter:
     def verify(self, tx_hash: str, invoice: PaymentInvoice) -> PaymentObservation:
         if invoice.network != self.network:
             raise ChainAdapterError("invoice network does not match adapter")
+        chain_id = _hex_int(self._rpc.call("eth_chainId", []))
+        if chain_id != self.expected_chain_id:
+            raise ChainAdapterError("EVM endpoint chain ID does not match configuration")
         if invoice.asset_kind not in {"native", "erc20"}:
             raise ChainAdapterError("EVM adapter supports native and ERC-20 assets")
 
