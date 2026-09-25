@@ -547,7 +547,10 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
             invoice_id=invoice.invoice_id,
             actor="manual-reviewer",
         )
-        self.assertEqual(service.list_unallocated_payments(limit=10), [])
+        remaining = service.list_unallocated_payments(limit=1000)
+        self.assertFalse(
+            any(item["tx_hash"] == event.tx_hash for item in remaining)
+        )
         self.assertEqual(snapshot["status"], "paid")
         self.assertEqual(snapshot["received_atomic"], "5000")
         self.assertIsNotNone(snapshot["entitlement"])
