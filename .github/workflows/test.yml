@@ -68,5 +68,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-      - name: Build production image
-        run: docker build --pull --tag nothing:ci .
+      - name: Build production API image
+        run: docker build --pull --file Dockerfile --tag nothing-api:ci .
+
+      - name: Build production payment worker image
+        run: docker build --pull --file Dockerfile.worker --tag nothing-payment-worker:ci .
