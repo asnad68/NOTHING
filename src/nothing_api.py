@@ -89,6 +89,13 @@ BILLING_SCOPE = os.getenv(
     "NOTHING_BILLING_REQUIRED_SCOPE",
     "nothing:billing",
 ).strip()
+
+BILLING_RATE_LIMIT_WINDOW_SECONDS = int(
+    os.getenv("NOTHING_BILLING_RATE_WINDOW_SECONDS", "60")
+)
+BILLING_RATE_LIMIT_MAX_REQUESTS = int(
+    os.getenv("NOTHING_BILLING_RATE_LIMIT_MAX_REQUESTS", "20")
+)
 TRUST_PROXY_HEADERS = os.getenv(
     "NOTHING_TRUST_PROXY_HEADERS",
     "false",
@@ -245,6 +252,10 @@ RATE_LIMITER = RateLimiter(RATE_LIMIT_WINDOW_SECONDS, RATE_LIMIT_MAX_REQUESTS)
 INGESTION_RATE_LIMITER = RateLimiter(
     INGESTION_RATE_LIMIT_WINDOW_SECONDS,
     INGESTION_RATE_LIMIT_MAX_REQUESTS,
+)
+BILLING_RATE_LIMITER = RateLimiter(
+    BILLING_RATE_LIMIT_WINDOW_SECONDS,
+    BILLING_RATE_LIMIT_MAX_REQUESTS,
 )
 
 
@@ -411,6 +422,19 @@ class NothingApiHandler(BaseHTTPRequestHandler):
             return False
         return True
 
+    def _check_billing_rate_limit(self) -> bool:
+        if not BILLING_RATE_LIMITER.allow(
+            f"billing:{self._client_key()}"
+        ):
+            self._send_problem(
+                429,
+                "RATE_LIMITED",
+                "Too many billing requests.",
+                retry_after=BILLING_RATE_LIMIT_WINDOW_SECONDS,
+            )
+            return False
+        return True
+
     def _method_not_allowed(self) -> None:
         self.send_response(405)
         self.send_header("Allow", "GET, OPTIONS")
@@ -427,7 +451,7 @@ class NothingApiHandler(BaseHTTPRequestHandler):
             self._post_ingestion_bundle()
             return
         if path == "/v1/billing/invoices":
-            if not self._check_ingestion_rate_limit():
+            if not self._check_billing_rate_limit():
                 return
             self._post_billing_invoice()
             return
