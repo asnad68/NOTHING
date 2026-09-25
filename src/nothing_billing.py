@@ -117,7 +117,8 @@ class SubscriptionBillingService:
         if client_request_fingerprint is not None:
             if (
                 len(client_request_fingerprint) != 64
-                or any(ch not in "0123456789abcdef" for ch in client_request_fingerprint.lower())
+                or client_request_fingerprint.lower() != client_request_fingerprint
+                or any(ch not in "0123456789abcdef" for ch in client_request_fingerprint)
             ):
                 raise PaymentValidationError(
                     "client_request_fingerprint must be a lowercase SHA-256 hex digest"
