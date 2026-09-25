@@ -223,6 +223,8 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
             success=True,
             observed_at=datetime.now(timezone.utc),
             source="trusted-test-indexer",
+            routing_mode="unique_destination",
+            routing_reference=None,
         )
 
         first = service.settle_observation(
