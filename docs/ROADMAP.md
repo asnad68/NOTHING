@@ -10,7 +10,7 @@
 - [x] Define subject types
 - [x] Define claim statuses
 - [x] Define revocation structure
-- [ ] Add formal schema test suite
+- [x] Add schema contract/parity test foundation
 
 ## Phase 2 — Verification Engine
 - [x] Implement deterministic identity validation
@@ -21,20 +21,25 @@
 - [x] Add deterministic evidence/event fixtures and tests
 - [x] Define evidence lifecycle and integrity boundaries
 - [x] Define verification event scope and supersession
-- [ ] Add schema-validation parity tests against JSON Schema
-- [ ] Implement claim/evidence relationship resolution
-- [ ] Implement verification procedure registry
+- [x] Add schema-validation parity tests against JSON Schema
+- [x] Implement claim/evidence/verification relationship resolution
+- [x] Implement versioned verification procedure registry
+- [x] Enforce procedure result allow-lists
+- [x] Enforce procedure lifecycle windows
+- [x] Enforce linear, acyclic supersession in v0.1
 
 ## Phase 3 — Verify Web
 - [ ] Build public identity lookup page
 - [ ] Build claim/evidence display
 - [ ] Build verification-event timeline
+- [ ] Build procedure reference display
 - [ ] Build revocation display
 - [ ] Add human-readable Nothing Mark
 
 ## Phase 4 — API
+- [ ] Define resource model from resolved protocol graph
 - [ ] Implement `GET /v1/identity/{nothing_id}`
-- [ ] Implement claim/evidence/event resources
+- [ ] Implement claim/evidence/event/procedure resources
 - [ ] Define API error model
 - [ ] Define content types and versioning
 - [ ] Add rate limiting and abuse controls
@@ -46,6 +51,7 @@
 - [ ] Test authorization relationships
 - [ ] Test evidence collection workflows
 - [ ] Test verification lifecycle
+- [ ] Test procedure lifecycle changes
 - [ ] Test revocation and supersession workflows
 
 ## Phase 6 — Network
