@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/asnad68/NOTHING/blob/main/schema/procedure-registry.schema.json",
+  "title": "NOTHING Verification Procedure Registry",
+  "description": "Machine-readable registry of versioned NOTHING verification procedures.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["registry_id", "version", "procedures"],
+  "properties": {
+    "registry_id": {
+      "type": "string",
+      "const": "NOTHING-PROCEDURE-REGISTRY"
+    },
+    "version": {
+      "type": "string",
+      "const": "0.1"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "procedures": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "procedure.schema.json"
+      }
+    }
+  }
+}
