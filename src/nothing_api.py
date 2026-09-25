@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import os
+import sys
 import uuid
 import threading
 import time
@@ -262,8 +263,35 @@ class NothingApiHandler(BaseHTTPRequestHandler):
     def ingestion_authenticator(self) -> BearerAuthenticator:
         return self.server.ingestion_authenticator  # type: ignore[attr-defined]
 
+    def _request_id(self) -> str:
+        request_id = getattr(self, "_nothing_request_id", None)
+        if request_id is None:
+            request_id = str(uuid.uuid4())
+            self._nothing_request_id = request_id
+        return request_id
+
+    def log_request(self, code: int | str = "-", size: int | str = "-") -> None:
+        record = {
+            "event": "http_request",
+            "request_id": self._request_id(),
+            "client_ip": self.client_address[0],
+            "method": self.command,
+            "path": self.path.split("?", 1)[0],
+            "status": str(code),
+            "bytes": str(size),
+        }
+        sys.stdout.write(json.dumps(record, sort_keys=True) + "\\n")
+        sys.stdout.flush()
+
     def log_message(self, fmt: str, *args: Any) -> None:
-        print("%s - %s" % (self.address_string(), fmt % args))
+        # Avoid logging Authorization, cookies or request bodies.
+        record = {
+            "event": "http_message",
+            "request_id": self._request_id(),
+            "message": fmt % args,
+        }
+        sys.stdout.write(json.dumps(record, sort_keys=True) + "\\n")
+        sys.stdout.flush()
 
     def _client_key(self) -> str:
         if TRUST_PROXY_HEADERS:
@@ -291,6 +319,7 @@ class NothingApiHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", f"{content_type}; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("X-NOTHING-Protocol-Version", PROTOCOL_VERSION)
+        self.send_header("X-Request-ID", self._request_id())
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header(
