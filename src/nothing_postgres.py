@@ -71,13 +71,28 @@ def _retry_serializable_method(function: Callable[..., Any]) -> Callable[..., An
             except (
                 self._SerializationFailure,
                 self._DeadlockDetected,
-            ):
+            ) as exc:
                 if attempt >= retries:
-                    raise
+                    raise StoreError(
+                        "PostgreSQL serializable transaction could not complete after retries"
+                    ) from exc
                 delay = self._retry_backoff_seconds * (2**attempt)
                 if delay:
                     time.sleep(delay)
         raise AssertionError("unreachable")
+
+
+def _translate_database_errors(function: Callable[..., Any]) -> Callable[..., Any]:
+    @wraps(function)
+    def wrapper(self: "PostgreSQLNothingStore", *args: Any, **kwargs: Any) -> Any:
+        try:
+            return function(self, *args, **kwargs)
+        except StoreError:
+            raise
+        except self._psycopg.Error as exc:
+            raise StoreError(
+                "PostgreSQL persistence operation failed"
+            ) from exc
 
     return wrapper
 
@@ -400,6 +415,7 @@ class PostgreSQLNothingStore:
             ],
         }
 
+    @_translate_database_errors
     def get_identity(self, nothing_id: str) -> StoredRecord:
         if not NOTHING_ID_RE.fullmatch(nothing_id):
             raise ValidationError("nothing_id must match NTH-XXXXXX.")
@@ -419,6 +435,7 @@ class PostgreSQLNothingStore:
             raise NotFoundError(nothing_id)
         return self._stored_identity(row)
 
+    @_translate_database_errors
     def get_identity_revision(
         self,
         nothing_id: str,
@@ -439,6 +456,7 @@ class PostgreSQLNothingStore:
             raise NotFoundError(f"{nothing_id}@{revision}")
         return self._stored_identity(row)
 
+    @_translate_database_errors
     def get_evidence(self, evidence_id: str) -> StoredRecord:
         if not EVIDENCE_ID_RE.fullmatch(evidence_id):
             raise ValidationError("evidence_id must match EVD-XXXXXX.")
@@ -451,6 +469,7 @@ class PostgreSQLNothingStore:
             raise NotFoundError(evidence_id)
         return self._stored_evidence(row)
 
+    @_translate_database_errors
     def get_event(self, event_id: str) -> StoredRecord:
         if not EVENT_ID_RE.fullmatch(event_id):
             raise ValidationError("event_id must match VER-XXXXXX.")
@@ -463,6 +482,7 @@ class PostgreSQLNothingStore:
             raise NotFoundError(event_id)
         return self._stored_event(row)
 
+    @_translate_database_errors
     def get_procedure(
         self,
         procedure_id: str,
@@ -482,6 +502,7 @@ class PostgreSQLNothingStore:
         return self._stored_procedure(row)
 
     @_retry_serializable_method
+    @_translate_database_errors
     def put_identity(
         self,
         identity: Mapping[str, Any],
@@ -571,6 +592,7 @@ class PostgreSQLNothingStore:
             return revision
 
     @_retry_serializable_method
+    @_translate_database_errors
     def put_evidence(
         self,
         evidence: Mapping[str, Any],
@@ -635,6 +657,7 @@ class PostgreSQLNothingStore:
             return True
 
     @_retry_serializable_method
+    @_translate_database_errors
     def put_procedure(
         self,
         procedure: Mapping[str, Any],
@@ -705,6 +728,7 @@ class PostgreSQLNothingStore:
             return True
 
     @_retry_serializable_method
+    @_translate_database_errors
     def put_event(
         self,
         event: Mapping[str, Any],
@@ -782,6 +806,7 @@ class PostgreSQLNothingStore:
             self._insert_event(connection, payload, digest, recorded, actor)
             return True
 
+    @_translate_database_errors
     def get_identity_bundle(self, nothing_id: str) -> IdentityBundle:
         if not NOTHING_ID_RE.fullmatch(nothing_id):
             raise ValidationError("nothing_id must match NTH-XXXXXX.")
@@ -1036,6 +1061,7 @@ class PostgreSQLNothingStore:
         )
 
     @_retry_serializable_method
+    @_translate_database_errors
     def ingest_bundle(
         self,
         bundle: Mapping[str, Any],
