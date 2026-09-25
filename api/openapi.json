@@ -4,7 +4,7 @@
     "title": "NOTHING Verification API",
     "version": "1.0.0",
     "summary": "Read-only API contract for NOTHING business identity verification.",
-    "description": "Deployment-neutral API contract for resolving a NOTHING identity into claims, evidence references, verification events and versioned procedures. The API does not turn structural validity into a universal trust score."
+    "description": "Deployment-neutral API contract for resolving a NOTHING identity into claims, evidence references, verification events and versioned procedures. The API does not turn structural validity into a universal trust score. The API layer is storage-agnostic and can run against the demo filesystem backend or durable persistence."
   },
   "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
   "paths": {
@@ -323,6 +323,58 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/healthz": {
+      "get": {
+        "tags": [
+          "Operations"
+        ],
+        "summary": "Check API liveness",
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "description": "Process is alive.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "tags": [
+          "Operations"
+        ],
+        "summary": "Check storage readiness",
+        "operationId": "getReadiness",
+        "responses": {
+          "200": {
+            "description": "Configured storage backend is reachable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Configured storage backend is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
                 }
               }
             }
@@ -1022,6 +1074,24 @@
           },
           "notes": {
             "type": "string"
+          }
+        }
+      },
+      "HealthResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "api_version"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "minLength": 1
+          },
+          "api_version": {
+            "type": "string",
+            "const": "1"
           }
         }
       }
