@@ -46,7 +46,7 @@ from src.nothing_verify import (
     validate_verification_event,
 )
 
-STORAGE_SCHEMA_VERSION = 8
+STORAGE_SCHEMA_VERSION = 9
 DEFAULT_POOL_MIN_SIZE = 2
 DEFAULT_POOL_MAX_SIZE = 10
 DEFAULT_POOL_TIMEOUT_SECONDS = 10
@@ -238,6 +238,73 @@ class PostgreSQLNothingStore:
             return True
         except Exception:
             return False
+
+    @_translate_database_errors
+    def get_payment_worker_checkpoint(
+        self,
+        worker_name: str,
+        account: str,
+    ) -> dict[str, Any] | None:
+        if not worker_name.strip() or not account.strip():
+            raise ValueError("worker_name and account are required")
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT worker_name, account, last_tx_hash,
+                       last_ledger_index, updated_at
+                FROM payment_worker_checkpoints
+                WHERE worker_name = %s AND account = %s
+                """,
+                (worker_name, account),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "worker_name": row["worker_name"],
+            "account": row["account"],
+            "last_tx_hash": row["last_tx_hash"],
+            "last_ledger_index": (
+                int(row["last_ledger_index"])
+                if row["last_ledger_index"] is not None
+                else None
+            ),
+            "updated_at": row["updated_at"],
+        }
+
+    @_translate_database_errors
+    def set_payment_worker_checkpoint(
+        self,
+        worker_name: str,
+        account: str,
+        *,
+        last_tx_hash: str,
+        last_ledger_index: int | None,
+    ) -> None:
+        if not worker_name.strip() or not account.strip():
+            raise ValueError("worker_name and account are required")
+        if not last_tx_hash.strip():
+            raise ValueError("last_tx_hash is required")
+        if last_ledger_index is not None and last_ledger_index < 0:
+            raise ValueError("last_ledger_index cannot be negative")
+        with self._transaction(retryable=True) as connection:
+            connection.execute(
+                """
+                INSERT INTO payment_worker_checkpoints(
+                    worker_name, account, last_tx_hash, last_ledger_index
+                ) VALUES (%s, %s, %s, %s)
+                ON CONFLICT (worker_name) DO UPDATE
+                SET account = EXCLUDED.account,
+                    last_tx_hash = EXCLUDED.last_tx_hash,
+                    last_ledger_index = EXCLUDED.last_ledger_index,
+                    updated_at = NOW()
+                """,
+                (
+                    worker_name,
+                    account,
+                    last_tx_hash,
+                    last_ledger_index,
+                ),
+            )
 
     def _migration_paths(self) -> list[Path]:
         root = Path(__file__).resolve().parents[1]
