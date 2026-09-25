@@ -285,7 +285,7 @@ class SubscriptionBillingService:
                 ) VALUES (
                     %s, %s, %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s,
-                    'open', %s, %s, %s
+                    %s, 'open', %s, %s, %s
                 )
                 """,
                 (
