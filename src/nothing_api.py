@@ -787,6 +787,41 @@ class NothingApiHandler(BaseHTTPRequestHandler):
             allow_cache=False,
         )
 
+    def _get_billing_prices(self, instance: str) -> None:
+        if self.billing_service is None:
+            self._send_problem(
+                503,
+                "BILLING_UNAVAILABLE",
+                "Billing persistence is not configured for this deployment.",
+                instance,
+            )
+            return
+        principal = self._billing_principal()
+        if principal is None:
+            return
+        try:
+            prices = self.billing_service.list_prices()
+        except StoreError:
+            self._send_problem(
+                503,
+                "BILLING_UNAVAILABLE",
+                "Billing persistence is temporarily unavailable.",
+                instance,
+            )
+            return
+
+        self._send(
+            200,
+            {
+                "data": {"prices": prices},
+                "meta": _meta(
+                    demo=self.store.demo,
+                    generated_at=datetime.now(timezone.utc).isoformat(),
+                ),
+            },
+            allow_cache=False,
+        )
+
     def _get_billing_entitlements(self, instance: str) -> None:
         if self.billing_service is None:
             self._send_problem(
@@ -1033,6 +1068,10 @@ class NothingApiHandler(BaseHTTPRequestHandler):
 
             if len(parts) == 4 and parts[:2] == ["v1", "procedures"]:
                 self._get_procedure(parts[2], parts[3], instance)
+                return
+
+            if len(parts) == 3 and parts[:2] == ["v1", "billing"] and parts[2] == "prices":
+                self._get_billing_prices(instance)
                 return
 
             if len(parts) == 3 and parts[:2] == ["v1", "billing"] and parts[2] == "entitlements":
