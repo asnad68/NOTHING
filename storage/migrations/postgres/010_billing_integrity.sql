@@ -59,13 +59,6 @@ ALTER TABLE billing_prices
             network = 'xrpl'
             AND asset_code = 'XRP'
             AND asset_kind = 'xrp'
-            AND (
-                routing_reference IS NULL
-                OR (
-                    routing_reference ~ '^[1-9][0-9]{0,9}$'
-                    AND routing_reference::numeric <= 4294967295
-                )
-            )
         )
     );
 
