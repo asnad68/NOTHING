@@ -1035,6 +1035,56 @@ class SubscriptionBillingService:
 
 
     @_retry_billing_transaction
+    def list_unallocated_payments(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        if limit < 1 or limit > 1000:
+            raise PaymentValidationError("limit must be between 1 and 1000")
+
+        with self.store._pool.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT pe.payment_event_id, pe.network, pe.asset_code,
+                       pe.asset_kind, pe.asset_contract, pe.destination,
+                       pe.amount_atomic, pe.chain_event_key, pe.tx_hash,
+                       pe.block_reference, pe.confirmation_count,
+                       pe.finality_status, pe.success, pe.source,
+                       pe.first_observed_at, pe.last_observed_at,
+                       pe.routing_mode, pe.routing_reference
+                FROM payment_events pe
+                LEFT JOIN payment_allocations pa
+                  ON pa.payment_event_id = pe.payment_event_id
+                WHERE pa.payment_event_id IS NULL
+                  AND pe.success = TRUE
+                  AND pe.finality_status = 'final'
+                ORDER BY pe.first_observed_at ASC
+                LIMIT %s
+                """,
+                (limit,),
+            ).fetchall()
+
+        return [
+            {
+                "payment_event_id": str(row["payment_event_id"]),
+                "network": row["network"],
+                "asset_code": row["asset_code"],
+                "asset_kind": row["asset_kind"],
+                "asset_contract": row["asset_contract"],
+                "destination": row["destination"],
+                "amount_atomic": str(row["amount_atomic"]),
+                "chain_event_key": row["chain_event_key"],
+                "tx_hash": row["tx_hash"],
+                "block_reference": row["block_reference"],
+                "confirmation_count": int(row["confirmation_count"]),
+                "finality_status": row["finality_status"],
+                "success": bool(row["success"]),
+                "source": row["source"],
+                "first_observed_at": row["first_observed_at"],
+                "last_observed_at": row["last_observed_at"],
+                "routing_mode": row["routing_mode"],
+                "routing_reference": row["routing_reference"],
+            }
+            for row in rows
+        ]
+
     def manual_reconcile_payment(
         self,
         *,
