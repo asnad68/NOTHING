@@ -1140,7 +1140,7 @@ class PostgreSQLNothingStore:
             self._lock_keys(
                 connection,
                 [
-                    f"idempotency:{actor}\x00{idempotency_key}",
+                    f"idempotency:{actor}|{idempotency_key}",
                 ],
             )
             self._lock_keys(
