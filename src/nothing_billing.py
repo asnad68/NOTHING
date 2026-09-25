@@ -64,6 +64,7 @@ def _retry_billing_transaction(function):
                 if delay:
                     time.sleep(delay)
         raise AssertionError("unreachable")
+    return wrapper
 
 
 class SubscriptionBillingService:
@@ -858,7 +859,7 @@ class SubscriptionBillingService:
                     "asset_contract": row["asset_contract"],
                     "amount_atomic": str(row["amount_atomic"]),
                     "amount": format(
-                        Decimal(amount_atomic).scaleb(-decimals),
+                        Decimal(amount_atomic).scaleb(-decimals).normalize(),
                         "f",
                     ),
                     "asset_decimals": decimals,
