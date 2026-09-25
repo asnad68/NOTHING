@@ -70,6 +70,9 @@ class SubscriptionBillingService:
         client_idempotency_key: str,
         expires_at: datetime,
         actor: str,
+        settlement_destination: str | None = None,
+        settlement_routing_mode: str | None = None,
+        settlement_routing_reference: str | None = None,
     ) -> PaymentInvoice:
         if not customer_ref.strip() or not plan_code.strip():
             raise PaymentValidationError(
@@ -130,7 +133,7 @@ class SubscriptionBillingService:
                        bp.price_id, bp.asset_code, bp.network,
                        bp.asset_kind, bp.asset_contract,
                        bp.amount_atomic, bp.asset_decimals,
-                       bp.destination
+                       bp.destination, bp.routing_mode
                 FROM billing_prices bp
                 JOIN subscription_plans p ON p.plan_code = bp.plan_code
                 WHERE bp.price_id = %s
@@ -157,7 +160,13 @@ class SubscriptionBillingService:
                 "asset_decimals": int(price["asset_decimals"]),
                 "destination": price["destination"],
                 "expires_at": expires_utc.isoformat(),
-                "routing_mode": price["routing_mode"],
+                "routing_mode": (
+                    settlement_routing_mode or price["routing_mode"]
+                ),
+                "routing_reference": settlement_routing_reference,
+                "settlement_destination": (
+                    settlement_destination or price["destination"]
+                ),
             }
 
             connection.execute(
