@@ -26,6 +26,7 @@ class ChainAdapterTests(unittest.TestCase):
         responses = {
             "tx": {
                 "validated": True,
+                "TransactionType": "Payment",
                 "Destination": "r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2",
                 "DestinationTag": 123456,
                 "meta": {
