@@ -231,7 +231,7 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
                 connection.execute(
                     "INSERT INTO schema_migrations(version) VALUES (%s) "
                     "ON CONFLICT (version) DO NOTHING",
-                    (9,),
+                    (10,),
                 )
         self.assertTrue(self.store.health())
 
@@ -744,14 +744,15 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
                     invoice_id, customer_ref, plan_code, price_id,
                     asset_code, network, asset_kind, asset_contract,
                     amount_atomic, asset_decimals, destination,
-                    routing_mode, routing_reference, status, expires_at,
-                    quote_json
+                    routing_mode, routing_reference, plan_duration_seconds,
+                    status, expires_at, quote_json
                 ) VALUES (
                     %s, 'entitlement-customer', %s, %s,
                     'XRP', 'xrpl', 'xrp', NULL,
                     1000000, 6,
                     'r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2',
-                    'xrp_destination_tag', '123', 'paid', %s, %s
+                    'xrp_destination_tag', '123', 2592000,
+                    'paid', %s, %s
                 )
                 """,
                 (
@@ -759,7 +760,11 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
                     plan_code,
                     price_id,
                     now + timedelta(minutes=10),
-                    json.dumps({"plan_code": plan_code, "price_id": price_id}),
+                    json.dumps({
+                        "plan_code": plan_code,
+                        "price_id": price_id,
+                        "duration_seconds": 2592000,
+                    }),
                 ),
             )
             connection.execute(
