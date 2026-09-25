@@ -17,6 +17,7 @@ from typing import Any, Mapping
 import re
 
 from src.nothing_verify import (
+    DATETIME_RE,
     EVIDENCE_TYPES,
     EVENT_STATUSES,
     ValidationError,
@@ -54,6 +55,7 @@ def _reject_extra_keys(record: Mapping[str, Any], allowed: set[str], field: str)
 
 def _parse_datetime(value: str, field: str) -> datetime:
     _require(isinstance(value, str) and bool(value.strip()), f"{field} must be a non-empty string")
+    _require(DATETIME_RE.fullmatch(value) is not None, f"{field} must match the NOTHING date-time profile")
     normalized = value[:-1] + "+00:00" if value.endswith(("Z", "z")) else value
     try:
         parsed = datetime.fromisoformat(normalized)
