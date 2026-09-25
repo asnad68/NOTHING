@@ -229,7 +229,7 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
         with self.store._pool.connection() as connection:
             connection.execute(
                 "DELETE FROM schema_migrations WHERE version = %s",
-                (10,),
+                (11,),
             )
         try:
             self.assertFalse(self.store.health())
@@ -247,7 +247,7 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
             row = connection.execute(
                 "SELECT MAX(version) AS version FROM schema_migrations"
             ).fetchone()
-        self.assertEqual(row["version"], 10)
+        self.assertEqual(row["version"], 11)
 
         identity = self.store.get_identity("NTH-000001")
         self.assertEqual(identity.record["nothing_id"], "NTH-000001")
