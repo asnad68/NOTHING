@@ -16,6 +16,12 @@ The worker discovers payments, matches the XRP destination tag to an invoice,
 and delegates settlement to the PostgreSQL billing service. The service then
 performs payment allocation and entitlement activation atomically.
 
+The worker uses a durable PostgreSQL checkpoint and paginates the XRPL
+`account_tx` result with markers. It advances the checkpoint only after every
+discovered observation in the scan has been processed successfully. A trusted
+payment that has no matching invoice is persisted as an unmatched payment event
+and audited rather than silently discarded.
+
 XRPL's official guidance recommends recording the latest processed transaction
 and ledger, checking `tesSUCCESS`, using validated results as final, and handling
 partial payments via `delivered_amount`.
@@ -35,6 +41,21 @@ The repository default uses the current XRPL public JSON-RPC endpoint
 starting point, not a substitute for operational redundancy or provider-level
 SLA planning. XRPL publishes public servers for read access and recommends
 running your own server when you need full control.
+
+## Billing API
+
+The authenticated Billing API provides:
+
+- `POST /v1/billing/invoices` for creating customer-scoped invoices
+- `GET /v1/billing/invoices/{invoice_id}` for current invoice state
+- `GET /v1/billing/entitlements` for active customer entitlements
+
+Billing uses a dedicated `nothing:billing` permission. The client cannot supply
+the customer reference, treasury destination or XRP routing tag. Those values
+are derived or allocated server-side.
+
+The API returns both the exact integer `amount_atomic` and a display amount.
+Do not use floating-point arithmetic for settlement or entitlement decisions.
 
 ## XRP invoice routing
 
