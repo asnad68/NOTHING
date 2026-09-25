@@ -46,10 +46,12 @@
           "minLength": 1
         },
         "title": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "publisher": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "accessed_at": {
           "type": "string",
@@ -120,7 +122,8 @@
       ]
     },
     "notes": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     }
   },
   "allOf": [
