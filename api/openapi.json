@@ -825,6 +825,77 @@
           }
         }
       }
+    },
+    "/v1/billing/prices": {
+      "get": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "List active billing prices",
+        "operationId": "listBillingPrices",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active customer-selectable prices without treasury routing secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingPriceListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer credential is missing or invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The access token lacks billing permission.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded.",
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/RetryAfter"
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Billing persistence is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1971,6 +2042,109 @@
                 "type": "array",
                 "items": {
                   "$ref": "#/components/schemas/BillingEntitlementView"
+                }
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ApiMeta"
+          }
+        }
+      },
+      "BillingPriceView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "price_id",
+          "plan_code",
+          "duration_seconds",
+          "asset_code",
+          "network",
+          "asset_kind",
+          "asset_contract",
+          "amount_atomic",
+          "amount",
+          "asset_decimals",
+          "routing_mode"
+        ],
+        "properties": {
+          "price_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "plan_code": {
+            "type": "string"
+          },
+          "duration_seconds": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "asset_code": {
+            "type": "string"
+          },
+          "network": {
+            "type": "string"
+          },
+          "asset_kind": {
+            "type": "string",
+            "enum": [
+              "native",
+              "erc20",
+              "xrp",
+              "btc_utxo"
+            ]
+          },
+          "asset_contract": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "amount_atomic": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "asset_decimals": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 36
+          },
+          "routing_mode": {
+            "type": "string",
+            "enum": [
+              "unique_destination",
+              "xrp_destination_tag",
+              "manual_shared"
+            ]
+          }
+        }
+      },
+      "BillingPriceListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "prices"
+            ],
+            "properties": {
+              "prices": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/BillingPriceView"
                 }
               }
             }
