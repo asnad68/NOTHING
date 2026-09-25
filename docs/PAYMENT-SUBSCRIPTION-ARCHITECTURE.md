@@ -24,6 +24,7 @@ Every invoice snapshots the exact settlement tuple:
 - asset decimals
 - expiration
 - client idempotency key
+- frozen plan duration at invoice creation
 
 Settlement uses integer atomic units. Floating-point values are not used for money comparison.
 
@@ -132,7 +133,7 @@ The final payment allocation and entitlement activation happen in the same Postg
 
 Either both commit, or neither commits.
 
-The entitlement table has a unique invoice identifier, so retrying the same settlement cannot create a second entitlement.
+The entitlement table has a unique invoice identifier, so retrying the same settlement cannot create a second entitlement. The purchased plan duration is snapshotted on the invoice, so later catalog edits cannot change an already-issued subscription term.
 
 For renewals, the new entitlement starts at the later of:
 - the current time
@@ -158,7 +159,7 @@ The database also protects payment identity fields, invoice quote fields and ent
 
 ## Trusted adapter boundary
 
-The future chain adapters are responsible only for producing trusted observations.
+The chain adapters are responsible only for producing trusted observations.
 
 The adapter output must include:
 
@@ -207,11 +208,10 @@ Repository work now includes:
 
 Still intentionally separate from this phase:
 
-- live chain RPC/indexer clients
 - webhook infrastructure
-- customer-facing billing API
 - fiat exchange-rate oracle
 - refund automation
+- managed payment-provider redundancy and production deployment
 
 These components must enter through the trusted observation boundary and must not bypass PostgreSQL settlement invariants.
 
