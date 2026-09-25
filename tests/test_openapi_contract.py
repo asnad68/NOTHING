@@ -108,5 +108,25 @@ class OpenApiContractTests(unittest.TestCase):
         )
 
 
+
+    def test_authenticated_ingestion_contract(self) -> None:
+        operation = self.spec["paths"]["/v1/ingestion/bundles"]["post"]
+        self.assertEqual(operation["security"], [{"BearerAuth": []}])
+        parameter_names = {
+            self.resolve_ref(parameter)["name"]
+            for parameter in operation["parameters"]
+        }
+        self.assertIn("Idempotency-Key", parameter_names)
+        for status in ("200", "400", "401", "409", "413", "415", "422", "429", "503"):
+            self.assertIn(status, operation["responses"])
+        self.assertIn(
+            "application/problem+json",
+            operation["responses"]["401"]["content"],
+        )
+        self.assertIn(
+            "BearerAuth",
+            self.spec["components"]["securitySchemes"],
+        )
+
 if __name__ == "__main__":
     unittest.main()
