@@ -769,7 +769,6 @@ class SubscriptionBillingService:
         )
         return str(entitlement_id)
 
-    @staticmethod
     @_retry_billing_transaction
     def expire_invoices(
         self,
