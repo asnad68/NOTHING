@@ -1140,7 +1140,7 @@ class SubscriptionBillingService:
                 connection,
                 invoice_model=invoice_model,
                 invoice_id=invoice_id,
-                now=effective_now,
+                now=now,
                 actor=actor,
                 excess_atomic=excess,
             )
