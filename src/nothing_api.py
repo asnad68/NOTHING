@@ -667,6 +667,13 @@ class NothingApiHandler(BaseHTTPRequestHandler):
             expires_at = datetime.now(timezone.utc) + timedelta(
                 seconds=request["expires_in_seconds"]
             )
+            request_fingerprint = hashlib.sha256(
+                json.dumps(
+                    request,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
             customer_ref = SubscriptionBillingService.customer_ref_for_actor(
                 principal.actor
             )
@@ -677,6 +684,7 @@ class NothingApiHandler(BaseHTTPRequestHandler):
                 client_idempotency_key=idempotency_key,
                 expires_at=expires_at,
                 actor=principal.actor,
+                client_request_fingerprint=request_fingerprint,
             )
         except OverflowError as exc:
             self._send_problem(413, "PAYLOAD_TOO_LARGE", str(exc))
