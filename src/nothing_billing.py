@@ -289,10 +289,11 @@ class SubscriptionBillingService:
                         asset_contract, destination, amount_atomic,
                         chain_event_key, tx_hash, block_reference,
                         confirmation_count, finality_status, success,
-                        source, first_observed_at, last_observed_at
+                        source, first_observed_at, last_observed_at,
+                        routing_mode, routing_reference
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, %s, %s, %s
                     )
                     """,
                     (
@@ -312,6 +313,8 @@ class SubscriptionBillingService:
                         observation.source,
                         observation.observed_at,
                         observation.observed_at,
+                        observation.routing_mode,
+                        observation.routing_reference,
                     ),
                 )
             else:
@@ -322,6 +325,8 @@ class SubscriptionBillingService:
                     ("destination", payment["destination"], observation.destination),
                     ("amount_atomic", int(payment["amount_atomic"]), observation.amount_atomic),
                     ("tx_hash", payment["tx_hash"], observation.tx_hash),
+                    ("routing_mode", payment["routing_mode"], observation.routing_mode),
+                    ("routing_reference", payment["routing_reference"], observation.routing_reference),
                 )
                 for field, old, new in immutable_fields:
                     if old != new:
@@ -440,6 +445,8 @@ class SubscriptionBillingService:
                 observed_at=observation.observed_at,
                 source=observation.source,
                 asset_contract=observation.asset_contract,
+                routing_mode=observation.routing_mode,
+                routing_reference=observation.routing_reference,
             )
 
             decision = classify_invoice(
