@@ -263,6 +263,190 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
         self.assertEqual(allocation_count, 1)
         self.assertEqual(entitlement_count, 1)
 
+
+    def _insert_payment_plan(
+        self,
+        *,
+        plan_code: str,
+        price_id: str,
+        asset_code: str,
+        network: str,
+        asset_kind: str,
+        amount_atomic: int,
+        asset_decimals: int,
+        destination: str,
+        routing_mode: str = "manual_shared",
+    ) -> None:
+        with self.store._transaction(retryable=True) as connection:
+            connection.execute(
+                """
+                INSERT INTO subscription_plans(
+                    plan_code, duration_seconds, status
+                ) VALUES (%s, %s, 'active')
+                """,
+                (plan_code, 30 * 86400),
+            )
+            connection.execute(
+                """
+                INSERT INTO billing_prices(
+                    price_id, plan_code, asset_code, network, asset_kind,
+                    asset_contract, amount_atomic, asset_decimals,
+                    destination, active, routing_mode
+                ) VALUES (
+                    %s, %s, %s, %s, %s,
+                    NULL, %s, %s, %s, TRUE, %s
+                )
+                """,
+                (
+                    price_id,
+                    plan_code,
+                    asset_code,
+                    network,
+                    asset_kind,
+                    amount_atomic,
+                    asset_decimals,
+                    destination,
+                    routing_mode,
+                ),
+            )
+
+    def test_xrp_invoice_idempotent_replay_keeps_generated_tag(self):
+        plan_code = "xrp-replay-" + uuid.uuid4().hex[:12]
+        price_id = str(uuid.uuid4())
+        destination = "r9LCAZDtwe8qeCv5X3BtD9ziBeqENLzCy2"
+        self._insert_payment_plan(
+            plan_code=plan_code,
+            price_id=price_id,
+            asset_code="XRP",
+            network="xrpl",
+            asset_kind="xrp",
+            amount_atomic=2_500_000,
+            asset_decimals=6,
+            destination=destination,
+            routing_mode="xrp_destination_tag",
+        )
+
+        first = SubscriptionBillingService(
+            self.store,
+            policies={"xrpl": ConfirmationPolicy(
+                required_confirmations=1,
+                require_finality=True,
+            )},
+        ).create_invoice(
+            customer_ref="xrp-customer",
+            plan_code=plan_code,
+            price_id=price_id,
+            client_idempotency_key="xrp-replay-key",
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
+            actor="test-billing",
+        )
+        second = SubscriptionBillingService(
+            self.store,
+            policies={"xrpl": ConfirmationPolicy(
+                required_confirmations=1,
+                require_finality=True,
+            )},
+        ).create_invoice(
+            customer_ref="xrp-customer",
+            plan_code=plan_code,
+            price_id=price_id,
+            client_idempotency_key="xrp-replay-key",
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
+            actor="test-billing",
+        )
+
+        self.assertEqual(second.invoice_id, first.invoice_id)
+        self.assertEqual(second.routing_mode, "xrp_destination_tag")
+        self.assertEqual(second.routing_reference, first.routing_reference)
+        self.assertIsNotNone(first.routing_reference)
+
+    def test_final_payment_status_cannot_downgrade_on_stale_observation(self):
+        service = SubscriptionBillingService(
+            self.store,
+            policies={"ethereum": ConfirmationPolicy(
+                required_confirmations=0,
+                require_finality=True,
+            )},
+        )
+        plan_code = "finality-" + uuid.uuid4().hex[:12]
+        price_id = str(uuid.uuid4())
+        self._insert_payment_plan(
+            plan_code=plan_code,
+            price_id=price_id,
+            asset_code="ETH",
+            network="ethereum",
+            asset_kind="native",
+            amount_atomic=10**15,
+            asset_decimals=18,
+            destination="0x1111111111111111111111111111111111111111",
+            routing_mode="unique_destination",
+        )
+        invoice = service.create_invoice(
+            customer_ref="finality-customer",
+            plan_code=plan_code,
+            price_id=price_id,
+            client_idempotency_key="finality-key",
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
+            actor="test-billing",
+            settlement_destination="0x2222222222222222222222222222222222222222",
+            settlement_routing_mode="unique_destination",
+        )
+
+        observation = PaymentObservation(
+            network="ethereum",
+            asset_code="ETH",
+            asset_kind="native",
+            destination=invoice.destination,
+            amount_atomic=10**15,
+            chain_event_key=chain_event_key(
+                network="ethereum",
+                tx_hash="0xfinality",
+                asset_kind="native",
+            ),
+            tx_hash="0xfinality",
+            block_reference="0xblock-final",
+            confirmation_count=12,
+            finality_status="final",
+            success=True,
+            observed_at=datetime.now(timezone.utc),
+            source="test-indexer",
+            routing_mode="unique_destination",
+            routing_reference=None,
+        )
+        service.settle_observation(
+            invoice_id=invoice.invoice_id,
+            observation=observation,
+            actor="test-indexer",
+        )
+
+        stale = PaymentObservation(
+            **{
+                **observation.__dict__,
+                "block_reference": "0xblock-stale",
+                "confirmation_count": 3,
+                "finality_status": "confirmed",
+                "observed_at": datetime.now(timezone.utc),
+            }
+        )
+        result = service.settle_observation(
+            invoice_id=invoice.invoice_id,
+            observation=stale,
+            actor="stale-indexer",
+        )
+        self.assertEqual(result["status"], "paid")
+
+        with self.store._pool.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT finality_status, confirmation_count
+                FROM payment_events
+                WHERE chain_event_key = %s
+                """,
+                (observation.chain_event_key,),
+            ).fetchone()
+        self.assertEqual(row["finality_status"], "final")
+        self.assertEqual(row["confirmation_count"], 12)
+
     def test_idempotency_key_reuse_with_different_fingerprint_conflicts(self):
         bundle = self.make_bundle()
         self.store.ingest_bundle(
