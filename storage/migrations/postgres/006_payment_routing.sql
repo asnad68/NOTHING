@@ -41,7 +41,13 @@ ALTER TABLE billing_invoices
     ADD CONSTRAINT billing_invoices_xrp_routing_check
     CHECK (
         routing_mode <> 'xrp_destination_tag'
-        OR (network = 'xrpl' AND routing_reference IS NOT NULL)
+        OR (
+            network = 'xrpl'
+            AND asset_code = 'XRP'
+            AND routing_reference IS NOT NULL
+            AND routing_reference ~ '^[1-9][0-9]*$'
+            AND routing_reference::numeric BETWEEN 1 AND 4294967295
+        )
     );
 
 ALTER TABLE payment_events
@@ -50,7 +56,13 @@ ALTER TABLE payment_events
     ADD CONSTRAINT payment_events_xrp_routing_check
     CHECK (
         routing_mode <> 'xrp_destination_tag'
-        OR (network = 'xrpl' AND routing_reference IS NOT NULL)
+        OR (
+            network = 'xrpl'
+            AND asset_code = 'XRP'
+            AND routing_reference IS NOT NULL
+            AND routing_reference ~ '^[1-9][0-9]*$'
+            AND routing_reference::numeric BETWEEN 1 AND 4294967295
+        )
     );
 
 ALTER TABLE billing_invoices
@@ -70,6 +82,10 @@ ALTER TABLE payment_events
         routing_mode <> 'unique_destination'
         OR routing_reference IS NULL
     );
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_billing_invoices_xrp_destination_tag
+    ON billing_invoices(network, destination, routing_reference)
+    WHERE routing_mode = 'xrp_destination_tag';
 
 CREATE INDEX IF NOT EXISTS idx_payment_events_route
     ON payment_events(network, routing_mode, routing_reference);
