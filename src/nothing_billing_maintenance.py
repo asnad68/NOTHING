@@ -26,12 +26,17 @@ def main() -> None:
     store = PostgreSQLNothingStore(dsn, auto_migrate=False)
     try:
         service = SubscriptionBillingService(store, policies={})
-        changed = service.expire_invoices(
+        expired_invoices = service.expire_invoices(
+            actor=actor,
+            limit=limit,
+        )
+        expired_entitlements = service.expire_entitlements(
             actor=actor,
             limit=limit,
         )
         print(
-            '{"event":"billing_expiration_scan","expired":%d}' % changed,
+            '{"event":"billing_expiration_scan","expired_invoices":%d,"expired_entitlements":%d}'
+            % (expired_invoices, expired_entitlements),
             flush=True,
         )
     finally:
