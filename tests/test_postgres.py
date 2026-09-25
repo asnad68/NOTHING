@@ -76,7 +76,7 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
             row = connection.execute(
                 "SELECT MAX(version) AS version FROM schema_migrations"
             ).fetchone()
-        self.assertEqual(row["version"], 5)
+        self.assertEqual(row["version"], 6)
 
         identity = self.store.get_identity("NTH-000001")
         self.assertEqual(identity.record["nothing_id"], "NTH-000001")
@@ -201,6 +201,8 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
             client_idempotency_key="invoice-once",
             expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
             actor="test-billing",
+            settlement_destination="0xUniqueTestDepositAddress",
+            settlement_routing_mode="unique_destination",
         )
 
         observation = PaymentObservation(
