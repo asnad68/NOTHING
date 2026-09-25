@@ -169,6 +169,13 @@ class PostgreSQLPersistenceIntegrationTests(unittest.TestCase):
                 last_tx_hash="TX-199",
                 last_ledger_index=199,
             )
+        with self.assertRaises(ConflictError):
+            self.store.set_payment_worker_checkpoint(
+                worker,
+                "rNEWACCOUNT",
+                last_tx_hash="TX-201",
+                last_ledger_index=201,
+            )
         checkpoint = self.store.get_payment_worker_checkpoint(worker, account)
         self.assertEqual(checkpoint["last_tx_hash"], "TX-200")
         self.assertEqual(checkpoint["last_ledger_index"], 200)
