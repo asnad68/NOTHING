@@ -106,3 +106,40 @@ An attacker may repeatedly submit invalid bearer credentials.
 
 **Control direction:** separate write rate limiting at the reference layer plus gateway/WAF controls in production.
 
+
+
+### JWT access-token confusion
+
+A valid JWT may be an ID token for a different relying party rather than an API access token.
+
+**Control:** production validation requires the access-token type header (at+jwt or application/at+jwt), configured issuer and audience, explicit algorithm allow-list and required access-token claims.
+
+### Algorithm confusion
+
+An attacker may try to switch a token to an unsupported or symmetric algorithm.
+
+**Control:** the production validator uses an explicit asymmetric algorithm allow-list and rejects HMAC configuration.
+
+### Authorization bypass
+
+A valid token may be presented without permission to ingest data.
+
+**Control:** authentication and authorization are separate checks. The ingestion action requires the nothing:ingest scope; roles or permissions outside the signed token are not trusted.
+
+### Key-source manipulation
+
+An attacker may try to influence where signature keys are retrieved from.
+
+**Control:** the JWKS URI is operator-configured and must be HTTPS. It is never taken from an unverified token claim.
+
+### Concurrent mutation / lost update
+
+Two API instances may update the same identity or submit the same ingestion concurrently.
+
+**Control:** PostgreSQL uses serializable transactions, deterministic transaction-scoped advisory locks, row locks on identity heads, immutable constraints and whole-operation retries after serialization/deadlock failures.
+
+### Migration race
+
+Two API instances may start at the same time and attempt the same schema migration.
+
+**Control:** migrations acquire a transaction-scoped advisory lock before inspecting and applying the schema version.
