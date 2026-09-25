@@ -22,6 +22,7 @@ COPY storage ./storage
 COPY schema ./schema
 COPY procedures ./procedures
 COPY api ./api
+COPY config ./config
 
 RUN chown -R nothing:nothing /app
 
