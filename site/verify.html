@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="NOTHING verification record viewer.">
+  <title>Verify — NOTHING</title>
+  <link rel="stylesheet" href="./assets/styles.css">
+</head>
+<body data-page="verify">
+  <header class="topbar">
+    <a class="brand" href="./">◇ NOTHING</a>
+    <nav aria-label="Primary">
+      <a class="active" href="./verify.html">Verify</a>
+      <a href="https://github.com/asnad68/NOTHING" rel="noreferrer">Repository</a>
+    </nav>
+  </header>
+
+  <main class="shell verify-shell">
+    <section class="verify-head">
+      <div>
+        <div class="eyebrow">NOTHING VERIFY WEB</div>
+        <h1>Inspect a Nothing ID</h1>
+        <p class="lead">The page displays the protocol graph. It does not independently prove the truth of an external source.</p>
+      </div>
+      <div class="demo-badge">DEMO DATA</div>
+    </section>
+
+    <form id="search-form" class="verify-form compact">
+      <label for="search-id">Nothing ID</label>
+      <div class="input-row">
+        <input id="search-id" name="id" value="NTH-000001" pattern="NTH-[0-9]{6}"
+               autocomplete="off" spellcheck="false">
+        <button type="submit">Inspect</button>
+      </div>
+    </form>
+
+    <div id="loading" class="panel">Loading verification record…</div>
+    <div id="not-found" class="panel error-panel" hidden>
+      <strong>Record not found in the prototype dataset.</strong>
+      <p>Only synthetic demo identities are currently published.</p>
+    </div>
+
+    <section id="result" hidden>
+      <div class="identity-card panel">
+        <div class="identity-main">
+          <div class="mark-large">◇</div>
+          <div>
+            <div class="eyebrow">NOTHING ID</div>
+            <div id="identity-id" class="identity-id">—</div>
+            <h2 id="identity-name">—</h2>
+            <p id="identity-type" class="muted">—</p>
+          </div>
+        </div>
+        <div id="record-state" class="status status-neutral">—</div>
+      </div>
+
+      <div id="consistency-warning" class="panel warning-panel" hidden></div>
+
+      <div class="section-heading">
+        <div>
+          <div class="eyebrow">CLAIMS</div>
+          <h2>What is being asserted?</h2>
+        </div>
+      </div>
+      <div id="claims" class="claim-grid"></div>
+
+      <div class="section-heading">
+        <div>
+          <div class="eyebrow">VERIFICATION TIMELINE</div>
+          <h2>What was checked?</h2>
+        </div>
+      </div>
+      <div id="timeline" class="timeline"></div>
+
+      <details class="raw panel">
+        <summary>View machine-readable demo bundle</summary>
+        <pre id="raw-json"></pre>
+      </details>
+    </section>
+  </main>
+
+  <footer class="footer shell">
+    <span>NOTHING v0.1 · Prototype / Research</span>
+    <a href="./">← Back to NOTHING</a>
+  </footer>
+
+  <script src="./assets/app.js" defer></script>
+</body>
+</html>
