@@ -54,6 +54,7 @@ class FakeBillingService:
             "destination": self.invoice.destination,
             "routing_mode": self.invoice.routing_mode,
             "routing_reference": self.invoice.routing_reference,
+            "duration_seconds": 2592000,
             "status": "open",
             "expires_at": self.invoice.expires_at,
             "paid_at": None,
@@ -192,6 +193,7 @@ class BillingApiTests(unittest.TestCase):
         self.assertEqual(data["invoice_id"], self.billing.invoice.invoice_id)
         self.assertEqual(data["amount"], "2.5")
         self.assertEqual(data["amount_atomic"], "2500000")
+        self.assertEqual(data["duration_seconds"], 2592000)
         self.assertEqual(data["routing_reference"], "12345")
         self.assertNotIn("customer_ref", data)
         self.assertEqual(data["status"], "open")
