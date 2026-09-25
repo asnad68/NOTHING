@@ -1380,24 +1380,38 @@ class SubscriptionBillingService:
                     f"{observation.chain_event_key}"
                 ],
             )
+            existing = connection.execute(
+                """
+                SELECT payment_event_id
+                FROM payment_events
+                WHERE network = %s
+                  AND chain_event_key = %s
+                FOR UPDATE
+                """,
+                (
+                    observation.network,
+                    observation.chain_event_key,
+                ),
+            ).fetchone()
             payment_event_id = self._upsert_payment_event(
                 connection,
                 observation,
             )
-            self._billing_audit(
-                connection,
-                actor,
-                "PAYMENT_UNMATCHED",
-                "payment_event",
-                str(payment_event_id),
-                {
-                    "network": observation.network,
-                    "tx_hash": observation.tx_hash,
-                    "destination": observation.destination,
-                    "routing_mode": observation.routing_mode,
-                    "routing_reference": observation.routing_reference,
-                },
-            )
+            if existing is None:
+                self._billing_audit(
+                    connection,
+                    actor,
+                    "PAYMENT_UNMATCHED",
+                    "payment_event",
+                    str(payment_event_id),
+                    {
+                        "network": observation.network,
+                        "tx_hash": observation.tx_hash,
+                        "destination": observation.destination,
+                        "routing_mode": observation.routing_mode,
+                        "routing_reference": observation.routing_reference,
+                    },
+                )
 
     def settle_discovered_observation(
         self,
