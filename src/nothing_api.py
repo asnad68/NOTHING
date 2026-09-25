@@ -732,7 +732,7 @@ class NothingApiHandler(BaseHTTPRequestHandler):
         response = dict(snapshot)
         response["amount_atomic"] = str(amount_atomic)
         response["amount"] = format(
-            Decimal(amount_atomic).scaleb(-decimals),
+            Decimal(amount_atomic).scaleb(-decimals).normalize(),
             "f",
         )
         response["expires_at"] = cls._iso_datetime(response["expires_at"])
@@ -822,6 +822,13 @@ class NothingApiHandler(BaseHTTPRequestHandler):
             allow_cache=False,
         )
 
+    @classmethod
+    def _billing_entitlement_view(cls, entitlement: dict[str, Any]) -> dict[str, Any]:
+        result = dict(entitlement)
+        for key in ("starts_at", "expires_at", "activated_at"):
+            result[key] = cls._iso_datetime(result.get(key))
+        return result
+
     def _get_billing_entitlements(self, instance: str) -> None:
         if self.billing_service is None:
             self._send_problem(
@@ -847,10 +854,18 @@ class NothingApiHandler(BaseHTTPRequestHandler):
 
         self._send(
             200,
-            {"data": {"entitlements": entitlements}, "meta": _meta(
-                demo=self.store.demo,
-                generated_at=datetime.now(timezone.utc).isoformat(),
-            )},
+            {
+                "data": {
+                    "entitlements": [
+                        self._billing_entitlement_view(item)
+                        for item in entitlements
+                    ]
+                },
+                "meta": _meta(
+                    demo=self.store.demo,
+                    generated_at=datetime.now(timezone.utc).isoformat(),
+                ),
+            },
             allow_cache=False,
         )
 
