@@ -22,6 +22,8 @@ class PaymentDomainTests(unittest.TestCase):
             "asset_decimals": 18,
             "destination": "0xE1c90171271B5325beE02592ACc50A510448d03E",
             "expires_at": datetime.now(timezone.utc) + timedelta(minutes=15),
+            "routing_mode": "unique_destination",
+            "routing_reference": None,
         }
         value.update(overrides)
         return PaymentInvoice(**value)
@@ -45,6 +47,8 @@ class PaymentDomainTests(unittest.TestCase):
             "success": True,
             "observed_at": datetime.now(timezone.utc),
             "source": "trusted-evm-indexer",
+            "routing_mode": "unique_destination",
+            "routing_reference": None,
         }
         value.update(overrides)
         return PaymentObservation(**value)
@@ -166,3 +170,17 @@ class PaymentDomainTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_shared_destination_requires_review(self):
+        invoice = self.invoice(routing_mode="manual_shared")
+        observation = self.observation(routing_mode="manual_shared")
+        result = classify_invoice(
+            invoice,
+            [observation],
+            now=datetime.now(timezone.utc),
+            required_confirmations=0,
+            require_finality=True,
+        )
+        self.assertEqual(result.invoice_status, "review_required")
+        self.assertFalse(result.eligible_for_allocation)
+        self.assertFalse(result.eligible_for_entitlement)
