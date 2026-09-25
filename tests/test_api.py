@@ -119,5 +119,16 @@ class ReferenceApiHttpTests(unittest.TestCase):
         payload = json.loads(body)
         self.assertEqual(payload["code"], "NOT_FOUND")
 
+    def test_health_and_readiness_endpoints(self) -> None:
+        response, body = self.request("/healthz")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.getheader("Content-Type"), "application/json; charset=utf-8")
+        self.assertEqual(json.loads(body)["status"], "ok")
+
+        response, body = self.request("/readyz")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(json.loads(body)["status"], "ready")
+
 if __name__ == "__main__":
     unittest.main()
+
