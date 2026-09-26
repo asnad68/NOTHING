@@ -1,0 +1,19 @@
+{
+  "registry_id": "NOTHING-ISSUER-REGISTRY",
+  "version": "0.1",
+  "issuers": [
+    {
+      "issuer_id": "NTH-DEMO-ISSUER",
+      "status": "DEMO",
+      "keys": [
+        {
+          "key_id": "demo-key-1",
+          "type": "Ed25519",
+          "public_key": "T47IoKbwmST2_Lo6vY3IHei7DORd8iuCY97KyZhCMc0",
+          "status": "ACTIVE",
+          "valid_from": "2026-09-27T00:00:00Z"
+        }
+      ]
+    }
+  ]
+}
