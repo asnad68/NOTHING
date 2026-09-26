@@ -9,7 +9,7 @@
     {
       "claim_id": "CLM-000001",
       "statement": "This record is an experimental demonstration of the NOTHING identity model.",
-      "status": "SELF-CLAIMED",
+      "status": "SOURCE-VERIFIED",
       "source": {
         "type": "self_attestation",
         "reference": "NOTHING project repository"
