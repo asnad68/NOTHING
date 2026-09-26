@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/asnad68/NOTHING/blob/main/schema/proof.schema.json",
+  "title": "NOTHING Cryptographic Proof Envelope",
+  "description": "NOTHING v0.1 detached Ed25519 proof envelope for an exact protocol resource.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["envelope_id", "version", "resource_type", "resource_id", "resource_hash", "issuer", "proof"],
+  "properties": {
+    "envelope_id": {"type": "string", "pattern": "^CRD-[0-9]{6}$"},
+    "version": {"type": "string", "const": "0.1"},
+    "resource_type": {"type": "string", "enum": ["identity", "evidence", "verification_event"]},
+    "resource_id": {
+      "type": "string",
+      "pattern": "^(NTH-[0-9]{6}|EVD-[0-9]{6}|VER-[0-9]{6})$"
+    },
+    "resource_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "issuer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issuer_id", "key_id"],
+      "properties": {
+        "issuer_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$"},
+        "key_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"}
+      }
+    },
+    "proof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "created", "proof_purpose", "signature"],
+      "properties": {
+        "type": {"type": "string", "const": "NOTHING-ED25519"},
+        "created": {"type": "string", "format": "date-time"},
+        "proof_purpose": {"type": "string", "const": "assertion"},
+        "signature": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "minLength": 86,
+          "maxLength": 86
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"resource_type": {"const": "identity"}}},
+      "then": {"properties": {"resource_id": {"pattern": "^NTH-[0-9]{6}$"}}}
+    },
+    {
+      "if": {"properties": {"resource_type": {"const": "evidence"}}},
+      "then": {"properties": {"resource_id": {"pattern": "^EVD-[0-9]{6}$"}}}
+    },
+    {
+      "if": {"properties": {"resource_type": {"const": "verification_event"}}},
+      "then": {"properties": {"resource_id": {"pattern": "^VER-[0-9]{6}$"}}}
+    }
+  ]
+}
