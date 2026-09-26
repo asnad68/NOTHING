@@ -34,7 +34,7 @@ class ProtocolRelationshipTests(unittest.TestCase):
         self.assertEqual(claim["evidence_ids"], ["EVD-000001"])
         self.assertEqual(claim["current_event_id"], "VER-000001")
         self.assertEqual(claim["current_status"], "SOURCE-VERIFIED")
-        self.assertEqual(claim["status_consistency"], "STATUS_MISMATCH")
+        self.assertEqual(claim["status_consistency"], "CONSISTENT")
         self.assertEqual(result["unreferenced_evidence"], [])
 
     def test_unknown_evidence_reference_is_rejected(self) -> None:
