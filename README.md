@@ -255,27 +255,16 @@ Third-party trademarks remain the property of their respective owners.
 
 ---
 
-## Payments
+## Payments — Deferred Phase
 
-The prototype does **not** enable:
+Payment processing is intentionally frozen while the identity and verification core is developed.
 
-- Visa
-- Mastercard
-- Bank transfers
-- Card checkout
+- No new payment features are being developed in this phase.
+- No Visa, Mastercard, bank transfer or card checkout is exposed by the identity prototype.
+- Existing payment code remains in the repository but is outside the current implementation scope.
+- Cryptocurrency settlement will be revisited only as a final commercial phase after legal structure, jurisdiction/AML-CFT review, custody/key-management controls, reconciliation and security gates are satisfied.
 
-The repository now contains a receive-only cryptocurrency settlement boundary designed for controlled deployment:
-
-- XRP on XRPL supports invoice-specific DestinationTag routing on the supplied treasury address.
-- Ethereum and Bitcoin adapters are implemented, but automatic settlement remains disabled for the currently supplied shared addresses.
-- USDT remains disabled until its exact settlement network is configured.
-- Payment events, invoice allocation, entitlement activation, idempotency, finality handling and an authenticated billing API are persisted through PostgreSQL.
-
-This code is **deployment-ready but not a claim that a production payment service is already live**. Production activation still requires infrastructure deployment, managed authentication, secret injection, database configuration, operational monitoring, reconciliation and jurisdiction-specific legal/compliance review.
-
-The long-term commercial model may explore **cryptocurrency-only settlement**, subject to applicable legal, tax, sanctions, AML/CFT and virtual-asset-service requirements in the relevant jurisdictions.
-
----
+**No real-money payment flow is part of the current identity-core release.**
 
 ## Technology Direction
 
@@ -327,9 +316,9 @@ Define the problem, terminology, principles and legal boundaries.
 
 Define the structure of a Nothing ID and its claims.
 
-### Phase 2 — Verification Engine
+### Phase 2 — Verification + Cryptographic Proof
 
-Build claim verification, evidence handling, status management and revocation.
+Build claim verification, evidence handling, status management, revocation, SHA-256 resource binding and Ed25519 proof verification.
 
 ### Phase 3 — Verify Web
 
@@ -481,6 +470,12 @@ The public API is versioned under `v1`. Public resources are read-only, while `P
 The write route requires a bearer credential and `Idempotency-Key`, validates the complete affected graph and commits one atomic transaction. Procedures remain outside the ingestion write surface.
 
 The API contract intentionally exposes the resolved verification graph instead of a universal trust score. The HTTP layer is storage-agnostic and now has a durable SQLite reference backend plus a documented PostgreSQL production target.
+
+## Cryptographic Proof Layer v0.1
+
+The repository now includes a detached Ed25519 proof envelope, an issuer/key registry, deterministic signing input, a public demo key discovery document and tamper/key-lifecycle tests. The proof layer establishes integrity and signer-key binding for an exact resource; it does not by itself establish the truth of the underlying claim.
+
+See `docs/CRYPTOGRAPHIC-PROOF.md` and `docs/ROADMAP-CRYPTO-PROOF.md`.
 
 ## Status
 
