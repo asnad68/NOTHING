@@ -1,0 +1,17 @@
+{
+  "envelope_id": "CRD-000001",
+  "version": "0.1",
+  "resource_type": "identity",
+  "resource_id": "NTH-000001",
+  "resource_hash": "12be3822c088d67bbd95e279367d5991b68b41d1f2f03f1d52b6e9d53edb7a51",
+  "issuer": {
+    "issuer_id": "NTH-DEMO-ISSUER",
+    "key_id": "demo-key-1"
+  },
+  "proof": {
+    "type": "NOTHING-ED25519",
+    "created": "2026-09-27T00:00:00Z",
+    "proof_purpose": "assertion",
+    "signature": "HRybTyeSDn2WQPCSrvieZXUEpRRU0B2r9f6bMxRuw2fTqADahH6y6w1HWWipyeuyJvWunq34pSZ5c4QDYuA3Dg"
+  }
+}
