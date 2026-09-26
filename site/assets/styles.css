@@ -441,3 +441,44 @@ button, .button {
   .identity-main { align-items: flex-start; }
   .footer { gap: 8px; }
 }
+
+
+.proof-panel {
+  margin-top: 2rem;
+}
+
+.proof-heading-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.proof-details {
+  display: grid;
+  gap: .7rem;
+  margin: 1.25rem 0;
+}
+
+.proof-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 190px) 1fr;
+  gap: 1rem;
+  padding: .8rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.proof-row span {
+  color: var(--muted);
+}
+
+.proof-row code {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 680px) {
+  .proof-row {
+    grid-template-columns: 1fr;
+    gap: .35rem;
+  }
+}
