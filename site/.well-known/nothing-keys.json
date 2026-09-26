@@ -1,5 +1,5 @@
 {
-  "issuer_registry": "NOTHING-ISSUER-REGISTRY",
+  "registry_id": "NOTHING-ISSUER-REGISTRY",
   "version": "0.1",
   "issuers": [
     {
@@ -7,9 +7,9 @@
       "status": "DEMO",
       "keys": [
         {
-          "key_id": "demo-key-2",
+          "key_id": "demo-key-3",
           "type": "Ed25519",
-          "public_key": "GRN3R1iGuneXLA5GMFXLBzs3MERW7zIkxg85t5XJmtc",
+          "public_key": "gHs5ieqSjlB2zsM5UgDv1k8RxOk7p13iU6gv3vnCwHM",
           "status": "ACTIVE",
           "valid_from": "2026-09-27T00:00:00Z"
         }
