@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/asnad68/NOTHING/blob/main/schema/issuer-registry.schema.json",
+  "title": "NOTHING Issuer Registry",
+  "description": "Registry of keys accepted for NOTHING v0.1 proof verification.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["registry_id", "version", "issuers"],
+  "properties": {
+    "registry_id": {"type": "string", "const": "NOTHING-ISSUER-REGISTRY"},
+    "version": {"type": "string", "const": "0.1"},
+    "issuers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["issuer_id", "status", "keys"],
+        "properties": {
+          "issuer_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$"},
+          "status": {"type": "string", "enum": ["ACTIVE", "DEMO", "SUSPENDED", "RETIRED"]},
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["key_id", "type", "public_key", "status"],
+              "properties": {
+                "key_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+                "type": {"type": "string", "const": "Ed25519"},
+                "public_key": {"type": "string", "pattern": "^[A-Za-z0-9_-]+$", "minLength": 43, "maxLength": 43},
+                "status": {"type": "string", "enum": ["ACTIVE", "RETIRED", "REVOKED"]},
+                "valid_from": {"type": "string", "format": "date-time"},
+                "valid_until": {"type": "string", "format": "date-time"}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
