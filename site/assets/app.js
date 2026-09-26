@@ -335,7 +335,7 @@
     $("#not-found").hidden = !notFound;
   }
 
-  function render(record) {
+  async function render(record) {
     const identity = record.identity;
     const events = record.events;
     const evidenceById = new Map(
@@ -503,10 +503,20 @@
         identity,
         verification_events: events,
         evidence: record.evidence,
-        procedures: record.procedures
+        procedures: record.procedures,
+        proof: record.proof || null
       },
       null,
       2
+    );
+
+    renderProof(
+      record.mode === "demo"
+        ? await verifyDemoProof(record)
+        : {
+            state: "UNAVAILABLE",
+            reason: "The current API view does not publish a proof envelope yet."
+          }
     );
 
     showState({ loading: false, result: true, notFound: false });
@@ -530,7 +540,7 @@
     try {
       if (API_BASE) {
         try {
-          render(await loadLive(nothingId));
+          await render(await loadLive(nothingId));
           return;
         } catch (liveError) {
           if (liveError.status && liveError.status !== 404) {
@@ -544,7 +554,7 @@
         showState({ loading: false, result: false, notFound: true });
         return;
       }
-      render(demo);
+      await render(demo);
     } catch (error) {
       $("#not-found").hidden = false;
       $("#not-found").innerHTML =
