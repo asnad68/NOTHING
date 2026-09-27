@@ -35,7 +35,8 @@
 - [x] Build procedure reference display
 - [x] Build revocation display
 - [x] Add human-readable Nothing Mark
-- [ ] Deploy static verifier with production TLS/CDN/CSP
+- [x] Add CSP baseline to static verifier
+- [ ] Deploy static verifier with production TLS/CDN
 
 ## Phase 4 — API
 - [x] Define resource model from resolved protocol graph
@@ -55,6 +56,9 @@
 - [x] Production JWT authentication and scope authorization
 - [x] Serializable transaction/retry and concurrency hardening
 - [x] Production deployment boundary: OCI image, hardened Kubernetes baseline, secret contract, migration/runtime role separation, health/readiness, backup/restore runbook, observability requirements, and fail-closed single-tenant boundary
+- [x] Cryptographic proof layer: SHA-256 resource binding, Ed25519 proof envelope, issuer/key registry and verification tests
+- [x] Repository release preflight and public-demo parity checks
+- [x] Final repository readiness and external launch-gate document
 
 - [x] Define separate authenticated write-ingestion boundary
 - [x] Require bearer authentication and idempotency for writes
