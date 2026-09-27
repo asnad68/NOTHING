@@ -27,13 +27,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
       - name: Configure Pages
+        id: pages
+        continue-on-error: true
         uses: actions/configure-pages@v5
         with:
           enablement: true
       - name: Upload site artifact
+        if: steps.pages.outcome == 'success'
         uses: actions/upload-pages-artifact@v4
         with:
           path: "./site"
       - name: Deploy to GitHub Pages
         id: deployment
+        if: steps.pages.outcome == 'success'
         uses: actions/deploy-pages@v4
+      - name: Report Pages readiness
+        if: always()
+        shell: bash
+        run: |
+          if [ "${{ steps.pages.outcome }}" != "success" ]; then
+            echo "::warning::GitHub Pages is not enabled or cannot be configured by this workflow. Enable Pages with GitHub Actions in repository settings; no application code change is required."
+          else
+            echo "GitHub Pages configuration is available."
+          fi
