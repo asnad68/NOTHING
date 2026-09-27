@@ -25,6 +25,10 @@ class VerifySiteSmokeTests(unittest.TestCase):
         self.assertIn("/verification-events", app)
         self.assertIn("NTH-[0-9]{6}", app)
         self.assertIn("escapeHtml", app)
+        self.assertIn("DEMO_PROOF_URL", app)
+        self.assertIn("Ed25519", app)
+        self.assertIn("Content-Security-Policy", verify)
+        self.assertIn("Content-Security-Policy", index)
         self.assertIn('cache: "no-store"', app)
         self.assertNotIn("Authorization", app)
         self.assertIn(".timeline", styles)
@@ -32,6 +36,11 @@ class VerifySiteSmokeTests(unittest.TestCase):
         bundle = json.loads((SITE / "data" / "demo-bundle.json").read_text(encoding="utf-8"))
         self.assertTrue(bundle["demo"])
         self.assertEqual(bundle["identities"][0]["nothing_id"], "NTH-000001")
+        proof = json.loads((SITE / "data" / "demo-proof.json").read_text(encoding="utf-8"))
+        registry = json.loads((SITE / ".well-known" / "nothing-keys.json").read_text(encoding="utf-8"))
+        self.assertEqual(proof["resource_id"], "NTH-000001")
+        self.assertEqual(proof["proof"]["type"], "NOTHING-ED25519")
+        self.assertEqual(registry["issuer_registry"], "NOTHING-ISSUER-REGISTRY")
 
     def test_site_javascript_has_valid_syntax_when_node_is_available(self):
         node = shutil.which("node")
