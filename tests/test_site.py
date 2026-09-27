@@ -40,7 +40,7 @@ class VerifySiteSmokeTests(unittest.TestCase):
         registry = json.loads((SITE / ".well-known" / "nothing-keys.json").read_text(encoding="utf-8"))
         self.assertEqual(proof["resource_id"], "NTH-000001")
         self.assertEqual(proof["proof"]["type"], "NOTHING-ED25519")
-        self.assertEqual(registry["issuer_registry"], "NOTHING-ISSUER-REGISTRY")
+        self.assertEqual(registry["registry_id"], "NOTHING-ISSUER-REGISTRY")
 
     def test_site_javascript_has_valid_syntax_when_node_is_available(self):
         node = shutil.which("node")
