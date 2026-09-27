@@ -20,6 +20,8 @@ jobs:
           python-version: "3.12"
       - name: Install development dependencies
         run: python -m pip install -r requirements-dev.txt
+      - name: Run repository preflight
+        run: python scripts/preflight.py
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
 
