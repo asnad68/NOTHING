@@ -186,13 +186,13 @@
     if (Array.isArray(value)) return "[" + value.map(canonicalize).join(",") + "]";
     if (typeof value === "object") {
       const keys = Object.keys(value).sort((a, b) => {
-        const aa = Array.from(a).map((ch) => ch.charCodeAt(0));
-        const bb = Array.from(b).map((ch) => ch.charCodeAt(0));
-        const len = Math.min(aa.length, bb.length);
+        const len = Math.min(a.length, b.length);
         for (let i = 0; i < len; i += 1) {
-          if (aa[i] !== bb[i]) return aa[i] - bb[i];
+          const aa = a.charCodeAt(i);
+          const bb = b.charCodeAt(i);
+          if (aa !== bb) return aa - bb;
         }
-        return aa.length - bb.length;
+        return a.length - b.length;
       });
       return "{" + keys.map((key) => JSON.stringify(key) + ":" + canonicalize(value[key])).join(",") + "}";
     }
