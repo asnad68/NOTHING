@@ -18,6 +18,8 @@ class VerifySiteSmokeTests(unittest.TestCase):
         styles = (SITE / "assets" / "styles.css").read_text(encoding="utf-8")
 
         self.assertIn("./verify.html", index)
+        self.assertIn("./pilot.html", index)
+        self.assertIn("https://www.linkedin.com/in/mehdihadadi/", (SITE / "pilot.html").read_text(encoding="utf-8"))
         self.assertIn("./config.js", verify)
         self.assertIn("./assets/app.js", verify)
         self.assertIn("window.NOTHING_API_BASE", config)
