@@ -477,6 +477,12 @@ The repository now includes a detached Ed25519 proof envelope, an issuer/key reg
 
 See `docs/CRYPTOGRAPHIC-PROOF.md` and `docs/ROADMAP-CRYPTO-PROOF.md`.
 
+## Commercial Pilot
+
+The repository now includes a public pilot landing page, a commercial pilot framework and a starting pilot agreement template. These materials are for controlled discussions with prospective participants; they do not describe pilot participants as customers or certifications without written authorization.
+
+See `docs/COMMERCIAL-PILOT.md` and `docs/PILOT-AGREEMENT-TEMPLATE.md`.
+
 ## Status
 
 **Project:** NOTHING  
