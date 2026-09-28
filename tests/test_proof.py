@@ -11,6 +11,7 @@ from src.nothing_proof import (
     create_envelope,
     generate_keypair,
     sha256_hex,
+    validate_envelope,
     verify_envelope,
 )
 
