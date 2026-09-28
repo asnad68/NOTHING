@@ -2003,6 +2003,12 @@ class PostgreSQLNothingStore:
             if self.put_event(event, actor=actor):
                 counts["events_inserted"] += 1
 
+        counts["proofs_inserted"] = 0
+        for path in sorted(examples.glob("CRD-*.json")):
+            envelope = load_json(path)
+            if self.put_proof(envelope, actor=actor):
+                counts["proofs_inserted"] += 1
+
         return counts
 
 
