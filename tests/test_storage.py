@@ -40,6 +40,8 @@ class SQLiteNothingStoreTests(unittest.TestCase):
         store.put_identity(bundle["identity"], actor="test")
         store.put_evidence(bundle["evidence"], actor="test")
         store.put_event(bundle["event"], actor="test")
+        proof = json.loads((ROOT / "examples/CRD-000001.json").read_text(encoding="utf-8"))
+        store.put_proof(proof, actor="test")
 
     def test_migration_and_import_are_durable(self):
         store = self.make_store()
@@ -146,6 +148,7 @@ class SQLiteNothingStoreTests(unittest.TestCase):
 
     def test_cryptographic_proof_is_durable_and_immutable(self):
         store = self.make_store()
+        self.db_path = Path(store.db_path)
         bundle = self.load_fixture_bundle()
         store.put_procedure(bundle["procedure"], actor="test")
         store.put_identity(bundle["identity"], actor="test")
