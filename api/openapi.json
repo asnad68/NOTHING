@@ -976,6 +976,76 @@
           }
         }
       }
+    },
+    "/v1/proofs/{envelope_id}": {
+      "get": {
+        "tags": [
+          "Proof"
+        ],
+        "summary": "Retrieve and verify a cryptographic proof envelope",
+        "operationId": "getProof",
+        "security": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProofEnvelopeId"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cryptographic proof envelope and verification result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProofResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid proof envelope identifier.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Proof not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Proof verification unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1038,6 +1108,15 @@
         "schema": {
           "type": "string",
           "format": "uuid"
+        }
+      },
+      "ProofEnvelopeId": {
+        "name": "envelope_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "pattern": "^CRD-[0-9]{6}$"
         }
       }
     },
@@ -1225,7 +1304,8 @@
           "version",
           "subject",
           "claims",
-          "revocation"
+          "revocation",
+          "cryptographic_proofs"
         ],
         "properties": {
           "id": {
@@ -1272,6 +1352,12 @@
           },
           "revocation": {
             "$ref": "#/components/schemas/RevocationView"
+          },
+          "cryptographic_proofs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProofView"
+            }
           }
         }
       },
@@ -2265,6 +2351,176 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/VerificationEventHistoryView"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ApiMeta"
+          }
+        }
+      },
+      "ProofEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "envelope_id",
+          "version",
+          "resource_type",
+          "resource_id",
+          "resource_hash",
+          "issuer",
+          "proof"
+        ],
+        "properties": {
+          "envelope_id": {
+            "type": "string",
+            "pattern": "^CRD-[0-9]{6}$"
+          },
+          "version": {
+            "type": "string",
+            "const": "0.1"
+          },
+          "resource_type": {
+            "type": "string",
+            "enum": [
+              "identity",
+              "evidence",
+              "verification_event"
+            ]
+          },
+          "resource_id": {
+            "type": "string"
+          },
+          "resource_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "issuer": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "issuer_id",
+              "key_id"
+            ],
+            "properties": {
+              "issuer_id": {
+                "type": "string"
+              },
+              "key_id": {
+                "type": "string"
+              }
+            }
+          },
+          "proof": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "created",
+              "proof_purpose",
+              "signature"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "NOTHING-ED25519"
+              },
+              "created": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "proof_purpose": {
+                "type": "string",
+                "const": "assertion"
+              },
+              "signature": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]+$",
+                "minLength": 86,
+                "maxLength": 86
+              }
+            }
+          }
+        }
+      },
+      "ProofVerification": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "valid",
+          "checks"
+        ],
+        "properties": {
+          "valid": {
+            "type": "boolean"
+          },
+          "checks": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "structure",
+              "resource_hash",
+              "issuer_key",
+              "signature"
+            ],
+            "properties": {
+              "structure": {
+                "type": "boolean"
+              },
+              "resource_hash": {
+                "type": "boolean"
+              },
+              "issuer_key": {
+                "type": "boolean"
+              },
+              "signature": {
+                "type": "boolean"
+              }
+            }
+          },
+          "issuer_id": {
+            "type": "string"
+          },
+          "key_id": {
+            "type": "string"
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resource_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "ProofView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "envelope",
+          "verification"
+        ],
+        "properties": {
+          "envelope": {
+            "$ref": "#/components/schemas/ProofEnvelope"
+          },
+          "verification": {
+            "$ref": "#/components/schemas/ProofVerification"
+          }
+        }
+      },
+      "ProofResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ProofView"
           },
           "meta": {
             "$ref": "#/components/schemas/ApiMeta"
