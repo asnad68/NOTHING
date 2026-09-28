@@ -71,6 +71,22 @@ class ReferenceApiHttpTests(unittest.TestCase):
         self.assertEqual(payload["code"], "NOT_FOUND")
         self.assertEqual(payload["status"], 404)
 
+    def test_proof_endpoint_returns_verifiable_envelope(self) -> None:
+        response, body = self.request("/v1/proofs/CRD-000001")
+        self.assertEqual(response.status, 200)
+        payload = json.loads(body)
+        self.assertEqual(payload["data"]["envelope"]["envelope_id"], "CRD-000001")
+        self.assertTrue(payload["data"]["verification"]["valid"])
+        self.assertEqual(
+            payload["data"]["verification"]["resource_hash"],
+            payload["data"]["envelope"]["resource_hash"],
+        )
+
+    def test_proof_invalid_id_returns_problem_json(self) -> None:
+        response, body = self.request("/v1/proofs/not-a-proof")
+        self.assertEqual(response.status, 400)
+        self.assertEqual(json.loads(body)["code"], "INVALID_ID")
+
     def test_identity_verification_history_endpoint_returns_full_event_timeline(self) -> None:
         response, body = self.request(
             "/v1/identity/NTH-000001/verification-events"
