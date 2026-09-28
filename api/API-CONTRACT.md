@@ -85,6 +85,12 @@ Returns one immutable-style Verification Event and its exact procedure reference
 
 Returns the exact versioned Procedure used to define a verification result.
 
+### GET /v1/proofs/{envelope_id}
+
+Returns one immutable cryptographic proof envelope and the server-side verification result against the current stored resource. The proof remains detached from the resource payload: the response exposes the envelope and check results, not private or sensitive source material.
+
+Proof verification checks the exact resource hash, configured issuer/key acceptance, issuer key lifecycle/time-window state, and Ed25519 signature. A proof referring to an older identity revision will fail the current resource-hash check after the identity changes.
+
 ### POST /v1/billing/invoices
 
 Creates a customer-scoped payment invoice from an operator-controlled active price.
