@@ -142,7 +142,30 @@ class SQLiteNothingStoreTests(unittest.TestCase):
             "NOTHING-BASIC-SOURCE-CHECK",
         )
         self.assertTrue(bundle.last_modified.endswith("Z"))
+        self.assertEqual([item.record["envelope_id"] for item in bundle.proofs], ["CRD-000001"])
 
+    def test_cryptographic_proof_is_durable_and_immutable(self):
+        store = self.make_store()
+        bundle = self.load_fixture_bundle()
+        store.put_procedure(bundle["procedure"], actor="test")
+        store.put_identity(bundle["identity"], actor="test")
+        proof = json.loads((ROOT / "examples/CRD-000001.json").read_text(encoding="utf-8"))
+        self.assertTrue(store.put_proof(proof, actor="test"))
+        self.assertFalse(store.put_proof(proof, actor="test"))
+        stored = store.get_proof("CRD-000001")
+        self.assertEqual(stored.record["resource_hash"], proof_sha256_hex(bundle["identity"]))
+        changed = copy.deepcopy(proof)
+        changed["issuer"]["key_id"] = "changed-key"
+        with self.assertRaises(ConflictError):
+            store.put_proof(changed, actor="test")
+        self.assertEqual(
+            [item.record["envelope_id"] for item in store.get_proofs_for_resource("identity", "NTH-000001")],
+            ["CRD-000001"],
+        )
+        store.close()
+        reopened = SQLiteNothingStore(self.db_path)
+        self.assertEqual(reopened.get_proof("CRD-000001").record, proof)
+        reopened.close()
 
 
     def test_authenticated_ingestion_is_idempotent_and_persistent(self):
