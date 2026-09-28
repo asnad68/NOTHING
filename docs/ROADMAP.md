@@ -56,7 +56,7 @@
 - [x] Production JWT authentication and scope authorization
 - [x] Serializable transaction/retry and concurrency hardening
 - [x] Production deployment boundary: OCI image, hardened Kubernetes baseline, secret contract, migration/runtime role separation, health/readiness, backup/restore runbook, observability requirements, and fail-closed single-tenant boundary
-- [x] Cryptographic proof layer: SHA-256 resource binding, Ed25519 proof envelope, issuer/key registry and verification tests
+- [x] Cryptographic proof layer: SHA-256 resource binding, Ed25519 proof envelope, issuer/key registry, durable persistence, public API verification and interoperability tests
 - [x] Repository release preflight and public-demo parity checks
 - [x] Final repository readiness and external launch-gate document
 
