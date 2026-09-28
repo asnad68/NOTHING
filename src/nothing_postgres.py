@@ -573,7 +573,6 @@ class PostgreSQLNothingStore:
             ],
         }
 
-    @_translate_database_errors
     @staticmethod
     def _stored_proof(row: Any) -> StoredRecord:
         recorded_at = row["recorded_at"]
@@ -585,6 +584,7 @@ class PostgreSQLNothingStore:
             recorded_at=recorded_at,
         )
 
+    @_translate_database_errors
     def get_identity(self, nothing_id: str) -> StoredRecord:
         if not NOTHING_ID_RE.fullmatch(nothing_id):
             raise ValidationError("nothing_id must match NTH-XXXXXX.")
@@ -670,8 +670,6 @@ class PostgreSQLNothingStore:
             raise NotFoundError(f"{procedure_id}@{version}")
         return self._stored_procedure(row)
 
-    @_retry_serializable_method
-    @_translate_database_errors
     @_translate_database_errors
     def get_proof(self, envelope_id: str) -> StoredRecord:
         if not ENVELOPE_ID_RE.fullmatch(envelope_id):
@@ -845,6 +843,8 @@ class PostgreSQLNothingStore:
             )
             return True
 
+    @_retry_serializable_method
+    @_translate_database_errors
     def put_identity(
         self,
         identity: Mapping[str, Any],
