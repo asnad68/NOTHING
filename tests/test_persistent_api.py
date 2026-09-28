@@ -52,6 +52,7 @@ class PersistentApiTests(unittest.TestCase):
         self.assertFalse(first_payload["meta"]["demo"])
         self.assertTrue(first_etag)
         self.assertTrue(first_last_modified)
+        self.assertTrue(first_payload["data"]["cryptographic_proofs"][0]["verification"]["valid"])
 
         self.server.shutdown()
         self.server.server_close()
