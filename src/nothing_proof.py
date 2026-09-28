@@ -251,6 +251,11 @@ def _signing_document(envelope: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def validate_envelope(envelope: Mapping[str, Any]) -> None:
+    """Validate a proof envelope without performing signature verification."""
+    _validate_envelope(envelope)
+
+
 def create_envelope(
     resource: Mapping[str, Any],
     *,
