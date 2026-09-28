@@ -26,6 +26,7 @@ class OpenApiContractTests(unittest.TestCase):
             "/v1/evidence/{evidence_id}",
             "/v1/verification-events/{event_id}",
             "/v1/procedures/{procedure_id}/{version}",
+            "/v1/proofs/{envelope_id}",
         }
         self.assertTrue(expected.issubset(paths))
 
