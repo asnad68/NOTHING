@@ -25,6 +25,7 @@ class VerifySiteSmokeTests(unittest.TestCase):
         self.assertIn("window.NOTHING_API_BASE", config)
         self.assertIn("/v1/identity/", app)
         self.assertIn("/verification-events", app)
+        self.assertIn("/v1/proofs/", app)
         self.assertIn("NTH-[0-9]{6}", app)
         self.assertIn("escapeHtml", app)
         self.assertIn("DEMO_PROOF_URL", app)
