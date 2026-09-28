@@ -97,166 +97,6 @@ class NothingStore(Protocol):
     def health(self) -> bool:
         ...
 
-    @staticmethod
-    def _stored_proof(row: sqlite3.Row) -> StoredRecord:
-        return StoredRecord(
-            record=json.loads(row["payload_json"]),
-            content_sha256=row["content_sha256"],
-            recorded_at=row["recorded_at"],
-        )
-
-    def get_proof(self, envelope_id: str) -> StoredRecord:
-        if not ENVELOPE_ID_RE.fullmatch(envelope_id):
-            raise ValidationError("envelope_id must match CRD-XXXXXX.")
-        with self._connect() as connection:
-            row = connection.execute(
-                "SELECT * FROM cryptographic_proofs WHERE envelope_id = ?",
-                (envelope_id,),
-            ).fetchone()
-        if row is None:
-            raise NotFoundError(envelope_id)
-        envelope = json.loads(row["payload_json"])
-        try:
-            validate_envelope(envelope)
-        except ProofError as exc:
-            raise StoreError(f"stored proof {envelope_id} is invalid: {exc}") from exc
-        return self._stored_proof(row)
-
-    def get_proofs_for_resource(
-        self,
-        resource_type: str,
-        resource_id: str,
-    ) -> tuple[StoredRecord, ...]:
-        validators = {
-            "identity": NOTHING_ID_RE,
-            "evidence": EVIDENCE_ID_RE,
-            "verification_event": EVENT_ID_RE,
-        }
-        pattern = validators.get(resource_type)
-        if pattern is None or not pattern.fullmatch(resource_id):
-            raise ValidationError("invalid proof resource selector")
-        with self._connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT *
-                FROM cryptographic_proofs
-                WHERE resource_type = ? AND resource_id = ?
-                ORDER BY envelope_id
-                """,
-                (resource_type, resource_id),
-            ).fetchall()
-        result = []
-        for row in rows:
-            envelope = json.loads(row["payload_json"])
-            try:
-                validate_envelope(envelope)
-            except ProofError as exc:
-                raise StoreError(
-                    f"stored proof {row['envelope_id']} is invalid: {exc}"
-                ) from exc
-            result.append(self._stored_proof(row))
-        return tuple(result)
-
-    def put_proof(
-        self,
-        envelope: Mapping[str, Any],
-        *,
-        actor: str = "system",
-        recorded_at: str | None = None,
-    ) -> bool:
-        try:
-            validate_envelope(envelope)
-        except ProofError as exc:
-            raise ValidationError(str(exc)) from exc
-        if not isinstance(actor, str) or not actor.strip():
-            raise ValueError("actor must be a non-empty string")
-
-        resource_type = envelope["resource_type"]
-        resource_id = envelope["resource_id"]
-        if resource_type == "identity":
-            resource = self.get_identity(resource_id)
-        elif resource_type == "evidence":
-            resource = self.get_evidence(resource_id)
-        else:
-            resource = self.get_event(resource_id)
-
-        expected_hash = proof_sha256_hex(resource.record)
-        if envelope["resource_hash"] != expected_hash:
-            raise ValidationError(
-                "proof resource_hash does not match the current stored resource"
-            )
-
-        payload = copy.deepcopy(dict(envelope))
-        payload_json = _canonical_json(payload)
-        digest = _content_hash(payload)
-        recorded = recorded_at or _utc_now()
-
-        with self._connect() as connection:
-            try:
-                connection.execute("BEGIN IMMEDIATE")
-                existing = connection.execute(
-                    "SELECT content_sha256 FROM cryptographic_proofs WHERE envelope_id = ?",
-                    (envelope["envelope_id"],),
-                ).fetchone()
-                if existing is not None:
-                    if existing["content_sha256"] == digest:
-                        connection.execute("COMMIT")
-                        return False
-                    raise ConflictError(
-                        f"proof {envelope['envelope_id']} is immutable; create a new envelope ID"
-                    )
-                connection.execute(
-                    """
-                    INSERT INTO cryptographic_proofs(
-                        envelope_id, version, resource_type, resource_id,
-                        resource_hash, issuer_id, key_id, payload_json,
-                        content_sha256, recorded_at, recorded_by
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        envelope["envelope_id"],
-                        envelope["version"],
-                        resource_type,
-                        resource_id,
-                        envelope["resource_hash"],
-                        envelope["issuer"]["issuer_id"],
-                        envelope["issuer"]["key_id"],
-                        payload_json,
-                        digest,
-                        recorded,
-                        actor,
-                    ),
-                )
-                connection.execute(
-                    """
-                    INSERT INTO audit_log(
-                        recorded_at, actor, action, record_type, record_id,
-                        content_sha256, details_json
-                    ) VALUES (?, ?, 'APPEND', 'cryptographic_proof', ?, ?, ?)
-                    """,
-                    (
-                        recorded,
-                        actor,
-                        envelope["envelope_id"],
-                        digest,
-                        json.dumps(
-                            {
-                                "resource_type": resource_type,
-                                "resource_id": resource_id,
-                                "issuer_id": envelope["issuer"]["issuer_id"],
-                                "key_id": envelope["issuer"]["key_id"],
-                            },
-                            sort_keys=True,
-                            separators=(",", ":"),
-                        ),
-                    ),
-                )
-                connection.execute("COMMIT")
-                return True
-            except Exception:
-                connection.execute("ROLLBACK")
-                raise
-
     def get_identity(self, nothing_id: str) -> StoredRecord:
         ...
 
@@ -687,6 +527,156 @@ class SQLiteNothingStore:
             content_sha256=row["content_sha256"],
             recorded_at=row["recorded_at"],
         )
+
+    @staticmethod
+    def _stored_proof(row: sqlite3.Row) -> StoredRecord:
+        return StoredRecord(
+            record=json.loads(row["payload_json"]),
+            content_sha256=row["content_sha256"],
+            recorded_at=row["recorded_at"],
+        )
+
+    def get_proof(self, envelope_id: str) -> StoredRecord:
+        if not ENVELOPE_ID_RE.fullmatch(envelope_id):
+            raise ValidationError("envelope_id must match CRD-XXXXXX.")
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM cryptographic_proofs WHERE envelope_id = ?",
+                (envelope_id,),
+            ).fetchone()
+        if row is None:
+            raise NotFoundError(envelope_id)
+        envelope = json.loads(row["payload_json"])
+        try:
+            validate_envelope(envelope)
+        except ProofError as exc:
+            raise StoreError(f"stored proof {envelope_id} is invalid: {exc}") from exc
+        return self._stored_proof(row)
+
+    def get_proofs_for_resource(
+        self,
+        resource_type: str,
+        resource_id: str,
+    ) -> tuple[StoredRecord, ...]:
+        validators = {
+            "identity": NOTHING_ID_RE,
+            "evidence": EVIDENCE_ID_RE,
+            "verification_event": EVENT_ID_RE,
+        }
+        pattern = validators.get(resource_type)
+        if pattern is None or not pattern.fullmatch(resource_id):
+            raise ValidationError("invalid proof resource selector")
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM cryptographic_proofs
+                WHERE resource_type = ? AND resource_id = ?
+                ORDER BY envelope_id
+                """,
+                (resource_type, resource_id),
+            ).fetchall()
+        result = []
+        for row in rows:
+            envelope = json.loads(row["payload_json"])
+            try:
+                validate_envelope(envelope)
+            except ProofError as exc:
+                raise StoreError(
+                    f"stored proof {row['envelope_id']} is invalid: {exc}"
+                ) from exc
+            result.append(self._stored_proof(row))
+        return tuple(result)
+
+    def put_proof(
+        self,
+        envelope: Mapping[str, Any],
+        *,
+        actor: str = "system",
+        recorded_at: str | None = None,
+    ) -> bool:
+        try:
+            validate_envelope(envelope)
+        except ProofError as exc:
+            raise ValidationError(str(exc)) from exc
+        if not isinstance(actor, str) or not actor.strip():
+            raise ValueError("actor must be a non-empty string")
+
+        resource_type = envelope["resource_type"]
+        resource_id = envelope["resource_id"]
+        if resource_type == "identity":
+            resource = self.get_identity(resource_id)
+        elif resource_type == "evidence":
+            resource = self.get_evidence(resource_id)
+        else:
+            resource = self.get_event(resource_id)
+
+        expected_hash = proof_sha256_hex(resource.record)
+        if envelope["resource_hash"] != expected_hash:
+            raise ValidationError(
+                "proof resource_hash does not match the current stored resource"
+            )
+
+        payload = copy.deepcopy(dict(envelope))
+        payload_json = _canonical_json(payload)
+        digest = _content_hash(payload)
+        recorded = recorded_at or _utc_now()
+
+        with self._connect() as connection:
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                existing = connection.execute(
+                    "SELECT content_sha256 FROM cryptographic_proofs WHERE envelope_id = ?",
+                    (envelope["envelope_id"],),
+                ).fetchone()
+                if existing is not None:
+                    if existing["content_sha256"] == digest:
+                        connection.execute("COMMIT")
+                        return False
+                    raise ConflictError(
+                        f"proof {envelope['envelope_id']} is immutable; create a new envelope ID"
+                    )
+                connection.execute(
+                    """
+                    INSERT INTO cryptographic_proofs(
+                        envelope_id, version, resource_type, resource_id,
+                        resource_hash, issuer_id, key_id, payload_json,
+                        content_sha256, recorded_at, recorded_by
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        envelope["envelope_id"], envelope["version"],
+                        resource_type, resource_id, envelope["resource_hash"],
+                        envelope["issuer"]["issuer_id"], envelope["issuer"]["key_id"],
+                        payload_json, digest, recorded, actor,
+                    ),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO audit_log(
+                        recorded_at, actor, action, record_type, record_id,
+                        content_sha256, details_json
+                    ) VALUES (?, ?, 'APPEND', 'cryptographic_proof', ?, ?, ?)
+                    """,
+                    (
+                        recorded, actor, envelope["envelope_id"], digest,
+                        json.dumps(
+                            {
+                                "resource_type": resource_type,
+                                "resource_id": resource_id,
+                                "issuer_id": envelope["issuer"]["issuer_id"],
+                                "key_id": envelope["issuer"]["key_id"],
+                            },
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
+                    ),
+                )
+                connection.execute("COMMIT")
+                return True
+            except Exception:
+                connection.execute("ROLLBACK")
+                raise
 
     def get_identity(self, nothing_id: str) -> StoredRecord:
         if not NOTHING_ID_RE.fullmatch(nothing_id):
