@@ -22,6 +22,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Protocol, Sequence
 
+from src.nothing_proof import (
+    ENVELOPE_ID_RE,
+    ProofError,
+    sha256_hex as proof_sha256_hex,
+    validate_envelope,
+)
 from src.nothing_protocol import (
     RelationshipError,
     resolve_claim_relationships,
@@ -39,7 +45,7 @@ from src.nothing_verify import (
     validate_verification_event,
 )
 
-STORAGE_SCHEMA_VERSION = 2
+STORAGE_SCHEMA_VERSION = 3
 DEFAULT_DB_PATH = Path("data/nothing.db")
 
 
@@ -70,6 +76,7 @@ class IdentityBundle:
     events: tuple[StoredRecord, ...]
     registry: dict[str, Any]
     last_modified: str
+    proofs: tuple[StoredRecord, ...]
 
 
 @dataclass(frozen=True)
@@ -90,12 +97,191 @@ class NothingStore(Protocol):
     def health(self) -> bool:
         ...
 
+    @staticmethod
+    def _stored_proof(row: sqlite3.Row) -> StoredRecord:
+        return StoredRecord(
+            record=json.loads(row["payload_json"]),
+            content_sha256=row["content_sha256"],
+            recorded_at=row["recorded_at"],
+        )
+
+    def get_proof(self, envelope_id: str) -> StoredRecord:
+        if not ENVELOPE_ID_RE.fullmatch(envelope_id):
+            raise ValidationError("envelope_id must match CRD-XXXXXX.")
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM cryptographic_proofs WHERE envelope_id = ?",
+                (envelope_id,),
+            ).fetchone()
+        if row is None:
+            raise NotFoundError(envelope_id)
+        envelope = json.loads(row["payload_json"])
+        try:
+            validate_envelope(envelope)
+        except ProofError as exc:
+            raise StoreError(f"stored proof {envelope_id} is invalid: {exc}") from exc
+        return self._stored_proof(row)
+
+    def get_proofs_for_resource(
+        self,
+        resource_type: str,
+        resource_id: str,
+    ) -> tuple[StoredRecord, ...]:
+        validators = {
+            "identity": NOTHING_ID_RE,
+            "evidence": EVIDENCE_ID_RE,
+            "verification_event": EVENT_ID_RE,
+        }
+        pattern = validators.get(resource_type)
+        if pattern is None or not pattern.fullmatch(resource_id):
+            raise ValidationError("invalid proof resource selector")
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM cryptographic_proofs
+                WHERE resource_type = ? AND resource_id = ?
+                ORDER BY envelope_id
+                """,
+                (resource_type, resource_id),
+            ).fetchall()
+        result = []
+        for row in rows:
+            envelope = json.loads(row["payload_json"])
+            try:
+                validate_envelope(envelope)
+            except ProofError as exc:
+                raise StoreError(
+                    f"stored proof {row['envelope_id']} is invalid: {exc}"
+                ) from exc
+            result.append(self._stored_proof(row))
+        return tuple(result)
+
+    def put_proof(
+        self,
+        envelope: Mapping[str, Any],
+        *,
+        actor: str = "system",
+        recorded_at: str | None = None,
+    ) -> bool:
+        try:
+            validate_envelope(envelope)
+        except ProofError as exc:
+            raise ValidationError(str(exc)) from exc
+        if not isinstance(actor, str) or not actor.strip():
+            raise ValueError("actor must be a non-empty string")
+
+        resource_type = envelope["resource_type"]
+        resource_id = envelope["resource_id"]
+        if resource_type == "identity":
+            resource = self.get_identity(resource_id)
+        elif resource_type == "evidence":
+            resource = self.get_evidence(resource_id)
+        else:
+            resource = self.get_event(resource_id)
+
+        expected_hash = proof_sha256_hex(resource.record)
+        if envelope["resource_hash"] != expected_hash:
+            raise ValidationError(
+                "proof resource_hash does not match the current stored resource"
+            )
+
+        payload = copy.deepcopy(dict(envelope))
+        payload_json = _canonical_json(payload)
+        digest = _content_hash(payload)
+        recorded = recorded_at or _utc_now()
+
+        with self._connect() as connection:
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                existing = connection.execute(
+                    "SELECT content_sha256 FROM cryptographic_proofs WHERE envelope_id = ?",
+                    (envelope["envelope_id"],),
+                ).fetchone()
+                if existing is not None:
+                    if existing["content_sha256"] == digest:
+                        connection.execute("COMMIT")
+                        return False
+                    raise ConflictError(
+                        f"proof {envelope['envelope_id']} is immutable; create a new envelope ID"
+                    )
+                connection.execute(
+                    """
+                    INSERT INTO cryptographic_proofs(
+                        envelope_id, version, resource_type, resource_id,
+                        resource_hash, issuer_id, key_id, payload_json,
+                        content_sha256, recorded_at, recorded_by
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        envelope["envelope_id"],
+                        envelope["version"],
+                        resource_type,
+                        resource_id,
+                        envelope["resource_hash"],
+                        envelope["issuer"]["issuer_id"],
+                        envelope["issuer"]["key_id"],
+                        payload_json,
+                        digest,
+                        recorded,
+                        actor,
+                    ),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO audit_log(
+                        recorded_at, actor, action, record_type, record_id,
+                        content_sha256, details_json
+                    ) VALUES (?, ?, 'APPEND', 'cryptographic_proof', ?, ?, ?)
+                    """,
+                    (
+                        recorded,
+                        actor,
+                        envelope["envelope_id"],
+                        digest,
+                        json.dumps(
+                            {
+                                "resource_type": resource_type,
+                                "resource_id": resource_id,
+                                "issuer_id": envelope["issuer"]["issuer_id"],
+                                "key_id": envelope["issuer"]["key_id"],
+                            },
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
+                    ),
+                )
+                connection.execute("COMMIT")
+                return True
+            except Exception:
+                connection.execute("ROLLBACK")
+                raise
+
     def get_identity(self, nothing_id: str) -> StoredRecord:
         ...
 
     def get_identity_revision(self, nothing_id: str, revision: int) -> StoredRecord:
         ...
 
+
+    def get_proof(self, envelope_id: str) -> StoredRecord:
+        ...
+
+    def get_proofs_for_resource(
+        self,
+        resource_type: str,
+        resource_id: str,
+    ) -> tuple[StoredRecord, ...]:
+        ...
+
+    def put_proof(
+        self,
+        envelope: Mapping[str, Any],
+        *,
+        actor: str = "system",
+        recorded_at: str | None = None,
+    ) -> bool:
+        ...
 
     def ingest_bundle(
         self,
@@ -364,6 +550,44 @@ BEGIN
 END;
 """.strip()
 
+MIGRATION_003 = """
+CREATE TABLE IF NOT EXISTS cryptographic_proofs (
+    envelope_id TEXT PRIMARY KEY,
+    version TEXT NOT NULL,
+    resource_type TEXT NOT NULL,
+    resource_id TEXT NOT NULL,
+    resource_hash TEXT NOT NULL,
+    issuer_id TEXT NOT NULL,
+    key_id TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    content_sha256 TEXT NOT NULL UNIQUE,
+    recorded_at TEXT NOT NULL,
+    recorded_by TEXT NOT NULL,
+    CHECK (resource_type IN ('identity', 'evidence', 'verification_event')),
+    CHECK (
+        (resource_type = 'identity' AND resource_id GLOB 'NTH-[0-9][0-9][0-9][0-9][0-9][0-9]')
+        OR
+        (resource_type = 'evidence' AND resource_id GLOB 'EVD-[0-9][0-9][0-9][0-9][0-9][0-9]')
+        OR
+        (resource_type = 'verification_event' AND resource_id GLOB 'VER-[0-9][0-9][0-9][0-9][0-9][0-9]')
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_proofs_resource
+    ON cryptographic_proofs(resource_type, resource_id, envelope_id);
+
+CREATE TRIGGER IF NOT EXISTS cryptographic_proofs_no_update
+BEFORE UPDATE ON cryptographic_proofs
+BEGIN
+    SELECT RAISE(ABORT, 'cryptographic proofs are immutable');
+END;
+
+CREATE TRIGGER IF NOT EXISTS cryptographic_proofs_no_delete
+BEFORE DELETE ON cryptographic_proofs
+BEGIN
+    SELECT RAISE(ABORT, 'cryptographic proofs are immutable');
+END;
+""".strip()
 
 class SQLiteNothingStore:
     """Durable single-node store implementing the NOTHING storage port."""
@@ -396,6 +620,7 @@ class SQLiteNothingStore:
         migrations = (
             (1, MIGRATION_001),
             (2, MIGRATION_002),
+            (3, MIGRATION_003),
         )
         with self._connect() as connection:
             connection.execute(
@@ -1563,9 +1788,20 @@ class SQLiteNothingStore:
             events = self._load_events_for_subject(connection, nothing_id)
             evidence = self._load_evidence_for_events(connection, events)
             registry = self._load_registry(connection)
+            proof_rows = connection.execute(
+                """
+                SELECT *
+                FROM cryptographic_proofs
+                WHERE resource_type = 'identity' AND resource_id = ?
+                ORDER BY envelope_id
+                """,
+                (nothing_id,),
+            ).fetchall()
+            proofs = tuple(self._stored_proof(row) for row in proof_rows)
 
             timestamps = [identity.recorded_at]
             timestamps.extend(event.recorded_at for event in events)
+            timestamps.extend(proof.recorded_at for proof in proofs)
             if evidence:
                 placeholders = ",".join("?" for _ in evidence)
                 evidence_ids = [item["evidence_id"] for item in evidence]
@@ -1606,6 +1842,7 @@ class SQLiteNothingStore:
             events=tuple(events),
             registry=registry,
             last_modified=_max_time(timestamps),
+            proofs=proofs,
         )
 
     def import_json_bundle(
@@ -1624,6 +1861,7 @@ class SQLiteNothingStore:
             "identities_added": 0,
             "evidence_inserted": 0,
             "events_inserted": 0,
+            "proofs_inserted": 0,
         }
 
         registry = load_json(procedure_path)
@@ -1652,6 +1890,11 @@ class SQLiteNothingStore:
             event = load_json(path)
             if self.put_event(event, actor=actor):
                 counts["events_inserted"] += 1
+
+        for path in sorted(examples.glob("CRD-*.json")):
+            envelope = load_json(path)
+            if self.put_proof(envelope, actor=actor):
+                counts["proofs_inserted"] += 1
 
         return counts
 
@@ -1745,6 +1988,68 @@ class FilesystemNothingStore:
                     ),
                 )
         raise NotFoundError(f"{procedure_id}@{version}")
+    def get_proof(self, envelope_id: str) -> StoredRecord:
+        if not ENVELOPE_ID_RE.fullmatch(envelope_id):
+            raise ValidationError("envelope_id must match CRD-XXXXXX.")
+        path = self._find("CRD", envelope_id, "envelope_id")
+        record = load_json(path)
+        try:
+            validate_envelope(record)
+        except ProofError as exc:
+            raise StoreError(f"proof {envelope_id} is invalid: {exc}") from exc
+        return StoredRecord(
+            record=record,
+            content_sha256=_content_hash(record),
+            recorded_at=datetime.fromtimestamp(
+                path.stat().st_mtime, tz=timezone.utc
+            ).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        )
+
+    def get_proofs_for_resource(
+        self,
+        resource_type: str,
+        resource_id: str,
+    ) -> tuple[StoredRecord, ...]:
+        validators = {
+            "identity": NOTHING_ID_RE,
+            "evidence": EVIDENCE_ID_RE,
+            "verification_event": EVENT_ID_RE,
+        }
+        pattern = validators.get(resource_type)
+        if pattern is None or not pattern.fullmatch(resource_id):
+            raise ValidationError("invalid proof resource selector")
+        proofs = []
+        for path in sorted(self._examples().glob("CRD-*.json")):
+            try:
+                record = load_json(path)
+                validate_envelope(record)
+            except (OSError, json.JSONDecodeError):
+                continue
+            except ProofError as exc:
+                raise StoreError(f"invalid proof file: {path.name}: {exc}") from exc
+            if record["resource_type"] == resource_type and record["resource_id"] == resource_id:
+                proofs.append(
+                    StoredRecord(
+                        record=record,
+                        content_sha256=_content_hash(record),
+                        recorded_at=datetime.fromtimestamp(
+                            path.stat().st_mtime, tz=timezone.utc
+                        ).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+                    )
+                )
+        return tuple(proofs)
+
+    def put_proof(
+        self,
+        envelope: Mapping[str, Any],
+        *,
+        actor: str = "system",
+        recorded_at: str | None = None,
+    ) -> bool:
+        raise StoreError(
+            "cryptographic proof writes require a durable persistence backend"
+        )
+
     def ingest_bundle(
         self,
         bundle: Mapping[str, Any],
@@ -1799,12 +2104,16 @@ class FilesystemNothingStore:
             )
         )
 
+        proofs = self.get_proofs_for_resource("identity", nothing_id)
+        timestamps.extend(item.recorded_at for item in proofs)
+
         return IdentityBundle(
             identity=identity,
             evidence=tuple(item.record for item in evidence_by_id.values()),
             events=tuple(events),
             registry=registry,
             last_modified=_max_time(timestamps),
+            proofs=proofs,
         )
 
 
