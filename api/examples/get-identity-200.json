@@ -10,7 +10,7 @@
       {
         "id": "CLM-000001",
         "statement": "This record is an experimental demonstration of the NOTHING identity model.",
-        "recorded_status": "SELF-CLAIMED",
+        "recorded_status": "SOURCE-VERIFIED",
         "current_verification": {
           "event_id": "VER-000001",
           "status": "SOURCE-VERIFIED",
@@ -28,7 +28,41 @@
     ],
     "revocation": {
       "status": "NOT_REVOKED"
-    }
+    },
+    "cryptographic_proofs": [
+      {
+        "envelope": {
+          "envelope_id": "CRD-000001",
+          "version": "0.1",
+          "resource_type": "identity",
+          "resource_id": "NTH-000001",
+          "resource_hash": "d7b88995713b00d3125ff4e8de39008b2f6552646792442c9575b542d7d08bb3",
+          "issuer": {
+            "issuer_id": "NTH-DEMO-ISSUER",
+            "key_id": "demo-key-3"
+          },
+          "proof": {
+            "type": "NOTHING-ED25519",
+            "created": "2026-09-27T00:00:00Z",
+            "proof_purpose": "assertion",
+            "signature": "dO0FHfEubuo8DM77sE9zKrwnPWn2N3ZQEFn6M8jfaVujCPlMEElJN4xgUpBpfjWXo3MyEj2ZFpAGRxaVYd8eAg"
+          }
+        },
+        "verification": {
+          "valid": true,
+          "checks": {
+            "structure": true,
+            "resource_hash": true,
+            "issuer_key": true,
+            "signature": true
+          },
+          "issuer_id": "NTH-DEMO-ISSUER",
+          "key_id": "demo-key-3",
+          "created": "2026-09-27T00:00:00Z",
+          "resource_hash": "d7b88995713b00d3125ff4e8de39008b2f6552646792442c9575b542d7d08bb3"
+        }
+      }
+    ]
   },
   "meta": {
     "api_version": "1",
