@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from src.nothing_proof import sha256_hex as proof_sha256_hex
 from src.nothing_store import ConflictError, SQLiteNothingStore
 
 ROOT = Path(__file__).resolve().parents[1]
