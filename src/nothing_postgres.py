@@ -16,6 +16,12 @@ from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Sequence
 
+from src.nothing_proof import (
+    ENVELOPE_ID_RE,
+    ProofError,
+    sha256_hex as proof_sha256_hex,
+    validate_envelope,
+)
 from src.nothing_protocol import (
     RelationshipError,
     resolve_claim_relationships,
@@ -568,6 +574,17 @@ class PostgreSQLNothingStore:
         }
 
     @_translate_database_errors
+    @staticmethod
+    def _stored_proof(row: Any) -> StoredRecord:
+        recorded_at = row["recorded_at"]
+        if hasattr(recorded_at, "isoformat"):
+            recorded_at = recorded_at.isoformat().replace("+00:00", "Z")
+        return StoredRecord(
+            record=json.loads(row["payload_json"]),
+            content_sha256=row["content_sha256"],
+            recorded_at=recorded_at,
+        )
+
     def get_identity(self, nothing_id: str) -> StoredRecord:
         if not NOTHING_ID_RE.fullmatch(nothing_id):
             raise ValidationError("nothing_id must match NTH-XXXXXX.")
@@ -655,6 +672,179 @@ class PostgreSQLNothingStore:
 
     @_retry_serializable_method
     @_translate_database_errors
+    @_translate_database_errors
+    def get_proof(self, envelope_id: str) -> StoredRecord:
+        if not ENVELOPE_ID_RE.fullmatch(envelope_id):
+            raise ValidationError("envelope_id must match CRD-XXXXXX.")
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM cryptographic_proofs WHERE envelope_id = %s",
+                (envelope_id,),
+            ).fetchone()
+        if row is None:
+            raise NotFoundError(envelope_id)
+        envelope = json.loads(row["payload_json"])
+        try:
+            validate_envelope(envelope)
+        except ProofError as exc:
+            raise StoreError(f"stored proof {envelope_id} is invalid: {exc}") from exc
+        return self._stored_proof(row)
+
+    @_translate_database_errors
+    def get_proofs_for_resource(
+        self,
+        resource_type: str,
+        resource_id: str,
+    ) -> tuple[StoredRecord, ...]:
+        validators = {
+            "identity": NOTHING_ID_RE,
+            "evidence": EVIDENCE_ID_RE,
+            "verification_event": EVENT_ID_RE,
+        }
+        pattern = validators.get(resource_type)
+        if pattern is None or not pattern.fullmatch(resource_id):
+            raise ValidationError("invalid proof resource selector")
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM cryptographic_proofs
+                WHERE resource_type = %s AND resource_id = %s
+                ORDER BY envelope_id
+                """,
+                (resource_type, resource_id),
+            ).fetchall()
+        result = []
+        for row in rows:
+            envelope = json.loads(row["payload_json"])
+            try:
+                validate_envelope(envelope)
+            except ProofError as exc:
+                raise StoreError(
+                    f"stored proof {row['envelope_id']} is invalid: {exc}"
+                ) from exc
+            result.append(self._stored_proof(row))
+        return tuple(result)
+
+    @_retry_serializable_method
+    @_translate_database_errors
+    def put_proof(
+        self,
+        envelope: Mapping[str, Any],
+        *,
+        actor: str = "system",
+        recorded_at: str | None = None,
+    ) -> bool:
+        try:
+            validate_envelope(envelope)
+        except ProofError as exc:
+            raise ValidationError(str(exc)) from exc
+        if not actor or not actor.strip():
+            raise ValueError("actor must be a non-empty string")
+
+        payload = copy.deepcopy(dict(envelope))
+        resource_type = payload["resource_type"]
+        resource_id = payload["resource_id"]
+        recorded = recorded_at or _utc_now()
+        digest = _content_hash(payload)
+
+        with self._transaction(retryable=True) as connection:
+            self._lock_keys(connection, [f"proof:{payload['envelope_id']}"])
+            existing = connection.execute(
+                "SELECT content_sha256 FROM cryptographic_proofs WHERE envelope_id = %s FOR UPDATE",
+                (payload["envelope_id"],),
+            ).fetchone()
+            if existing is not None:
+                if existing["content_sha256"] == digest:
+                    return False
+                raise ConflictError(
+                    f"proof {payload['envelope_id']} is immutable; create a new envelope ID"
+                )
+
+            if resource_type == "identity":
+                row = connection.execute(
+                    """
+                    SELECT r.payload_json
+                    FROM identity_heads h
+                    JOIN identity_revisions r
+                      ON r.nothing_id = h.nothing_id
+                     AND r.revision = h.revision
+                    WHERE h.nothing_id = %s
+                    """,
+                    (resource_id,),
+                ).fetchone()
+            elif resource_type == "evidence":
+                row = connection.execute(
+                    "SELECT payload_json FROM evidence WHERE evidence_id = %s",
+                    (resource_id,),
+                ).fetchone()
+            else:
+                row = connection.execute(
+                    "SELECT payload_json FROM verification_events WHERE event_id = %s",
+                    (resource_id,),
+                ).fetchone()
+
+            if row is None:
+                raise NotFoundError(resource_id)
+            resource = json.loads(row["payload_json"])
+            if payload["resource_hash"] != proof_sha256_hex(resource):
+                raise ValidationError(
+                    "proof resource_hash does not match the current stored resource"
+                )
+
+            connection.execute(
+                """
+                INSERT INTO cryptographic_proofs(
+                    envelope_id, version, resource_type, resource_id,
+                    resource_hash, issuer_id, key_id, payload_json,
+                    content_sha256, recorded_at, recorded_by
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    payload["envelope_id"],
+                    payload["version"],
+                    resource_type,
+                    resource_id,
+                    payload["resource_hash"],
+                    payload["issuer"]["issuer_id"],
+                    payload["issuer"]["key_id"],
+                    json.dumps(
+                        payload,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                    digest,
+                    recorded,
+                    actor,
+                ),
+            )
+            connection.execute(
+                """
+                INSERT INTO audit_log(
+                    recorded_at, actor, action, record_type, record_id,
+                    content_sha256, details_json
+                ) VALUES (%s, %s, 'APPEND', 'cryptographic_proof', %s, %s, %s)
+                """,
+                (
+                    recorded,
+                    actor,
+                    payload["envelope_id"],
+                    digest,
+                    json.dumps(
+                        {
+                            "resource_type": resource_type,
+                            "resource_id": resource_id,
+                            "issuer_id": payload["issuer"]["issuer_id"],
+                            "key_id": payload["issuer"]["key_id"],
+                        },
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                ),
+            )
+            return True
+
     def put_identity(
         self,
         identity: Mapping[str, Any],
@@ -982,9 +1172,20 @@ class PostgreSQLNothingStore:
             events = self._load_events_for_subject(connection, nothing_id)
             evidence = self._load_evidence_for_events(connection, events)
             registry = self._load_registry(connection)
+            proof_rows = connection.execute(
+                """
+                SELECT *
+                FROM cryptographic_proofs
+                WHERE resource_type = 'identity' AND resource_id = %s
+                ORDER BY envelope_id
+                """,
+                (nothing_id,),
+            ).fetchall()
+            proofs = tuple(self._stored_proof(row) for row in proof_rows)
 
             timestamps = [identity.recorded_at]
             timestamps.extend(event.recorded_at for event in events)
+            timestamps.extend(proof.recorded_at for proof in proofs)
             if evidence:
                 evidence_ids = [item["evidence_id"] for item in evidence]
                 rows = connection.execute(
@@ -1034,6 +1235,7 @@ class PostgreSQLNothingStore:
             events=tuple(events),
             registry=registry,
             last_modified=_max_time(timestamps),
+            proofs=proofs,
         )
 
     def _lock_keys(self, connection: Any, keys: Sequence[str]) -> None:
