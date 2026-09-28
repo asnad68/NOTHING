@@ -55,6 +55,15 @@ class OpenApiContractTests(unittest.TestCase):
                         f"{path} missing declaration for {placeholder}",
                     )
 
+    def test_proof_operation_contract(self) -> None:
+        operation = self.spec["paths"]["/v1/proofs/{envelope_id}"]["get"]
+        self.assertEqual(operation["security"], [])
+        self.assertEqual(self.resolve_ref(operation["parameters"][0])["name"], "envelope_id")
+        self.assertEqual(
+            operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ProofResponse",
+        )
+
     def test_identity_operation_has_cache_and_error_contract(self) -> None:
         operation = self.spec["paths"]["/v1/identity/{nothing_id}"]["get"]
         self.assertIn("200", operation["responses"])
