@@ -14,7 +14,7 @@ The identity/verification core is the current product scope. Cryptocurrency paym
 | Procedure registry | Complete | Versioned procedures and result allow-lists |
 | Relationship resolver | Complete | Cross-record consistency and lifecycle checks |
 | Verify Web | Complete | Human-facing graph/timeline and demo proof panel |
-| Cryptographic proof | Complete for v0.1 prototype | SHA-256 binding + Ed25519 detached envelope |
+| Cryptographic proof | Complete for v0.1 release scope | SHA-256 binding + Ed25519 detached envelope + durable SQLite/PostgreSQL persistence + API verification |
 | Issuer/key registry | Complete for v0.1 prototype | Lifecycle and validity-window checks |
 | API contract | Complete | OpenAPI v1 with explicit read/write boundaries |
 | Reference API | Complete | Storage-agnostic HTTP implementation |
