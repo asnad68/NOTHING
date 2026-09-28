@@ -25,7 +25,7 @@ Convert a mutable JSON presentation into a resource whose integrity and signer c
 
 Proof verification is now surfaced in the public Verify Web demo. The browser recalculates the SHA-256 resource binding, resolves the published demo issuer/key registry, and attempts Ed25519 signature verification through Web Crypto. When the browser cannot perform Ed25519 verification, the UI reports the limitation instead of claiming success.
 
-The production API read path still needs a durable proof resource/attachment model before it can publish proof results.
+The durable storage model and API read path now publish proof envelopes for identity resources. Proofs are immutable, linked by resource type/id/hash, exposed at `GET /v1/proofs/{envelope_id}`, and included in identity reads. The API verifies the current resource hash and issuer/key/signature state before reporting the proof result.
 
 ## Production gates
 
