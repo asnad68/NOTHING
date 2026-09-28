@@ -127,6 +127,21 @@
       )
     ]);
 
+    const proofViews = identityPayload.data.cryptographic_proofs || [];
+    let proof = null;
+    let issuerRegistry = null;
+    if (proofViews.length > 0 && proofViews[0]?.envelope?.envelope_id) {
+      const proofId = proofViews[0].envelope.envelope_id;
+      const [proofPayload, registryPayload] = await Promise.all([
+        fetchJson(`/v1/proofs/${encodeURIComponent(proofId)}`).catch(() => null),
+        fetch(DEMO_ISSUER_REGISTRY_URL, { cache: "no-store" }).then(
+          async (response) => (response.ok ? response.json() : null)
+        ).catch(() => null)
+      ]);
+      proof = proofPayload?.data?.envelope || proofViews[0]?.envelope || null;
+      issuerRegistry = registryPayload;
+    }
+
     return {
       mode: "live",
       nothingId,
@@ -138,6 +153,8 @@
       procedures: procedurePayloads
         .map((payload) => payload?.data)
         .filter(Boolean),
+      proof,
+      issuerRegistry,
       metadata: identityPayload.meta || {}
     };
   }
