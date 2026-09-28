@@ -28,6 +28,7 @@ from src.nothing_auth import (
     AuthConfigurationError,
     OIDCJwtAuthenticator,
 )
+from src.nothing_proof import ENVELOPE_ID_RE, ProofError, verify_envelope
 from src.nothing_ingestion import (
     BearerAuthenticator,
     IDEMPOTENCY_KEY_RE,
@@ -145,6 +146,55 @@ def _iso_to_http_date(value: str) -> str:
     normalized = value[:-1] + "+00:00" if value.endswith(("Z", "z")) else value
     timestamp = datetime.fromisoformat(normalized).timestamp()
     return formatdate(timestamp, usegmt=True)
+
+
+
+def _now_iso() -> str:
+    return (
+        datetime.now(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
+def _load_proof_registry() -> dict[str, Any]:
+    path = _repo_root() / "trust" / "issuer-registry.json"
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            registry = json.load(handle)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise StoreError(
+            "cryptographic proof issuer registry is unavailable"
+        ) from exc
+    if (
+        not isinstance(registry, dict)
+        or registry.get("registry_id") != "NOTHING-ISSUER-REGISTRY"
+    ):
+        raise StoreError("cryptographic proof issuer registry is invalid")
+    return registry
+
+
+def _proof_view(
+    envelope: dict[str, Any],
+    resource: dict[str, Any],
+    registry: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        verification = verify_envelope(
+            envelope,
+            resource,
+            registry,
+            at_time=_now_iso(),
+        )
+    except ProofError as exc:
+        raise StoreError(
+            f"cryptographic proof verification could not be completed: {exc}"
+        ) from exc
+    return {
+        "envelope": envelope,
+        "verification": verification,
+    }
 
 
 def _identity_view(
@@ -1118,6 +1168,10 @@ class NothingApiHandler(BaseHTTPRequestHandler):
                 self._get_event(parts[2], instance)
                 return
 
+            if len(parts) == 3 and parts[:2] == ["v1", "proofs"]:
+                self._get_proof(parts[2], instance)
+                return
+
             if len(parts) == 4 and parts[:2] == ["v1", "identity"] and parts[2] and parts[3] == "verification-events":
                 self._get_identity_verification_events(parts[2], instance)
                 return
@@ -1144,7 +1198,7 @@ class NothingApiHandler(BaseHTTPRequestHandler):
                 "The requested API resource does not exist.",
                 instance,
             )
-        except (OSError, json.JSONDecodeError, ValidationError, RelationshipError, StoreError) as exc:
+        except (OSError, json.JSONDecodeError, ValidationError, RelationshipError, StoreError, ProofError) as exc:
             self._send_problem(
                 503,
                 "TEMPORARILY_UNAVAILABLE",
@@ -1181,8 +1235,14 @@ class NothingApiHandler(BaseHTTPRequestHandler):
             events,
             bundle.registry,
         )
+        proof_registry = _load_proof_registry()
+        identity_view = _identity_view(identity, events, resolution)
+        identity_view["cryptographic_proofs"] = [
+            _proof_view(proof.record, identity, proof_registry)
+            for proof in bundle.proofs
+        ]
         payload = {
-            "data": _identity_view(identity, events, resolution),
+            "data": identity_view,
             "meta": _meta(
                 demo=self.store.demo,
                 generated_at=bundle.last_modified,
@@ -1333,6 +1393,47 @@ class NothingApiHandler(BaseHTTPRequestHandler):
 
         payload = {
             "data": stored.record,
+            "meta": _meta(
+                demo=self.store.demo,
+                generated_at=stored.recorded_at,
+            ),
+        }
+        self._serve_json(payload, stored.recorded_at)
+
+    def _get_proof(self, envelope_id: str, instance: str) -> None:
+        if not ENVELOPE_ID_RE.fullmatch(envelope_id):
+            self._send_problem(
+                400,
+                "INVALID_ID",
+                "envelope_id must match CRD-XXXXXX.",
+                instance,
+            )
+            return
+
+        try:
+            stored = self.store.get_proof(envelope_id)
+        except NotFoundError:
+            self._send_problem(
+                404,
+                "NOT_FOUND",
+                "The requested cryptographic proof does not exist.",
+                instance,
+            )
+            return
+
+        envelope = stored.record
+        resource_type = envelope["resource_type"]
+        resource_id = envelope["resource_id"]
+        if resource_type == "identity":
+            resource = self.store.get_identity(resource_id).record
+        elif resource_type == "evidence":
+            resource = self.store.get_evidence(resource_id).record
+        else:
+            resource = self.store.get_event(resource_id).record
+
+        proof_registry = _load_proof_registry()
+        payload = {
+            "data": _proof_view(envelope, resource, proof_registry),
             "meta": _meta(
                 demo=self.store.demo,
                 generated_at=stored.recorded_at,
