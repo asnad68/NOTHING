@@ -52,6 +52,9 @@ class ReferenceApiHttpTests(unittest.TestCase):
             claim["current_verification"]["procedure"]["id"],
             "NOTHING-BASIC-SOURCE-CHECK",
         )
+        self.assertTrue(
+            payload["data"]["cryptographic_proofs"][0]["verification"]["valid"]
+        )
 
     def test_identity_invalid_id_returns_problem_json(self) -> None:
         response, body = self.request("/v1/identity/not-an-id")
