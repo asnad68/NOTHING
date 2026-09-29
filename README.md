@@ -251,7 +251,11 @@ NOTHING does not claim to be:
 
 References to companies or standards do not imply endorsement, partnership or authorization.
 
+The project is independent and is **not affiliated with, endorsed by, or sponsored by Nothing Technology Limited**.
+
 Third-party trademarks remain the property of their respective owners.
+
+**Brand-clearance note:** before filing or materially expanding commercial use of the exact word mark `NOTHING`, complete a professional trademark/name-clearance review for the intended goods/services and jurisdictions. The project does not currently represent `NOTHING` as a registered trademark for this project.
 
 ---
 
