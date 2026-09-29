@@ -5,6 +5,12 @@
 - [x] Define identity and claim terminology
 - [x] Establish legal/disclaimer boundaries
 
+## Phase 0.5 — Branding / IP Gate
+- [ ] Conduct professional trademark/name clearance for `NOTHING`
+- [ ] Define intended goods/services and Nice classes
+- [ ] Check priority/clearance in intended launch jurisdictions
+- [ ] Decide whether the exact `NOTHING` mark is commercially usable before filing or paid brand expansion
+
 ## Phase 1 — Identity Schema
 - [x] Define `NTH-XXXXXX` identifier format
 - [x] Define subject types
