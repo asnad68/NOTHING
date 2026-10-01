@@ -1,5 +1,4 @@
-// Optional production API origin for Verify Web.
-// Leave empty to use the bundled synthetic demo dataset.
-// Example:
-// window.NOTHING_API_BASE = "https://api.example.example";
+// Deployment configuration for the public NOTHING web application.
 window.NOTHING_API_BASE = "";
+// Set this to the public HTTPS enrollment gateway before enabling paid registration.
+window.NOTHING_ENROLLMENT_API_BASE = "";
