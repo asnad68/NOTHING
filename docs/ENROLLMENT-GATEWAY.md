@@ -23,15 +23,13 @@ Required environment:
 - `NOTHING_VERIFY_BASE_URL=https://<public-nothing-site>`
 - `NOTHING_ENROLLMENT_ALLOWED_ORIGIN=https://<public-nothing-site>`
 
-The configured billing price must use:
+For a personal EVM receiving wallet, configure that public wallet address as the billing-price destination. Automatic matching does **not** rely on the amount alone: each invoice receives a unique routing reference and the browser puts `NOTHING|<routing_reference>` into the EVM transaction calldata. The server verifies that reference together with sender, recipient, exact amount, receipt success and finality.
 
-- asset: ETH
-- network: ethereum
-- asset kind: native
-- routing mode: unique_destination
-- an invoice-specific destination
+Do not use an address shared with unrelated manual payments for automatic enrollment unless those payments cannot accidentally collide with the route/reference policy.
 
-Do not configure a shared treasury address for automatic enrollment settlement.
+## Price model
+
+A commercial price such as USD 10 should be defined by the operator in the billing catalog. If the settlement asset is ETH, convert the commercial price to a frozen integer ETH amount before invoice creation. The browser only displays the server-issued quote; it does not calculate the payable amount.
 
 ## Start
 
@@ -45,12 +43,8 @@ Place the gateway behind TLS. The public registration site should set `window.NO
 
 ## ID semantics
 
-Nothing IDs are stable six-digit project identifiers such as `NTH-000101`. Allocation is deterministic from the normalized registration digest with collision candidates. The ID is not a trademark number, government registration, legal certificate or independent verification result.
+NOTHING IDs are stable six-digit project identifiers such as `NTH-000101`. Allocation is deterministic from the normalized registration digest with collision candidates. The ID is not a trademark number, government registration, legal certificate or independent verification result.
 
 ## Hologram / badge
 
 The first release uses an SVG web badge that links to `verify.html?id=NTH-XXXXXX`. It is a clickable public identity marker. It is **not an NFT** until a future on-chain minting adapter is implemented and its token identifier is recorded in the NOTHING proof/identity model.
-
-## Payment pricing
-
-A price such as USD 10 must be defined by the operator in the billing catalog and, if the settlement asset is ETH, converted into a frozen integer ETH amount before invoice creation. Do not put a floating USD calculation in the browser. The browser only displays and pays the server-issued quote.
