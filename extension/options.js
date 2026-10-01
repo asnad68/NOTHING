@@ -1,18 +1,1 @@
-(() => {
-  const api = globalThis.browser ?? globalThis.chrome;
-  const defaults = {
-    registrationUrl: "https://YOUR-NOTHING-DOMAIN.example/register.html",
-    verifyUrl: "https://YOUR-NOTHING-DOMAIN.example/verify.html",
-    docsUrl: "https://github.com/asnad68/NOTHING"
-  };
-  async function init() {
-    const cfg = await api.storage.local.get(defaults);
-    for (const k of Object.keys(defaults)) document.getElementById(k).value = cfg[k] || defaults[k];
-    document.getElementById("save").addEventListener("click", async () => {
-      const next = Object.fromEntries(Object.keys(defaults).map(k => [k, document.getElementById(k).value.trim()]));
-      await api.storage.local.set(next);
-      document.getElementById("status").textContent = "Saved.";
-    });
-  }
-  init();
-})();
+(()=>{const api=globalThis.browser??globalThis.chrome;const defaults={registrationUrl:"https://asnad68.github.io/NOTHING/register.html",verifyUrl:"https://asnad68.github.io/NOTHING/verify.html",docsUrl:"https://github.com/asnad68/NOTHING"};async function init(){const cfg=await api.storage.local.get(defaults);for(const k of Object.keys(defaults))document.getElementById(k).value=cfg[k]||defaults[k];document.getElementById("save").addEventListener("click",async()=>{const next=Object.fromEntries(Object.keys(defaults).map(k=>[k,document.getElementById(k).value.trim()]));await api.storage.local.set(next);document.getElementById("status").textContent="Saved."})}init()})();
