@@ -17,84 +17,50 @@
     <a class="brand" href="./">◇ NOTHING</a>
     <nav aria-label="Primary">
       <a href="./verify.html">Verify</a>
+      <a href="./register.html">Register</a>
       <a href="./pilot.html">Pilot</a>
+      <a href="./privacy.html">Privacy</a>
       <a href="https://github.com/asnad68/NOTHING" rel="noreferrer">Repository</a>
     </nav>
   </header>
-
   <main>
     <section class="hero shell">
       <div class="eyebrow">BUSINESS IDENTITY &amp; VERIFICATION INFRASTRUCTURE</div>
       <h1>Verify the claim.<br>See the evidence.<br>Understand the scope.</h1>
-      <p class="lead">
-        NOTHING separates identity, claims, evidence, verification events and procedures
-        so a status can be inspected instead of simply trusted.
-      </p>
-      <div class="input-row" style="margin-top:28px;max-width:520px;">
+      <p class="lead">NOTHING separates identity, claims, evidence, verification events and procedures so a status can be inspected instead of simply trusted.</p>
+      <div class="input-row" style="margin-top:28px;max-width:560px;">
         <a class="button" href="./verify.html?id=NTH-000001">See the demo</a>
-        <a class="button secondary" href="./pilot.html">Explore a pilot →</a>
+        <a class="button secondary" href="./register.html">Register an identity →</a>
       </div>
-
       <form class="verify-form" action="./verify.html" method="get">
         <label for="nothing-id">Nothing ID</label>
         <div class="input-row">
-          <input id="nothing-id" name="id" value="NTH-000001" pattern="NTH-[0-9]{6}"
-                 autocomplete="off" spellcheck="false" aria-describedby="demo-note">
+          <input id="nothing-id" name="id" value="NTH-000001" pattern="NTH-[0-9]{6}" autocomplete="off" spellcheck="false" aria-describedby="demo-note">
           <button type="submit">Verify</button>
         </div>
         <p id="demo-note" class="note">The public prototype currently contains synthetic demo data only.</p>
       </form>
     </section>
-
     <section class="feature-grid shell" aria-label="NOTHING model">
-      <article class="feature">
-        <span class="feature-number">01</span>
-        <h2>Identity</h2>
-        <p>A stable project-level reference such as <code>NTH-000001</code>.</p>
-      </article>
-      <article class="feature">
-        <span class="feature-number">02</span>
-        <h2>Evidence</h2>
-        <p>What source or material was considered, when it was collected, and its integrity information.</p>
-      </article>
-      <article class="feature">
-        <span class="feature-number">03</span>
-        <h2>Verification</h2>
-        <p>Which claim was evaluated, using which procedure, with what result and scope.</p>
-      </article>
-      <article class="feature">
-        <span class="feature-number">04</span>
-        <h2>Lifecycle</h2>
-        <p>Historical events remain visible when a later event supersedes an earlier one.</p>
-      </article>
+      <article class="feature"><span class="feature-number">01</span><h2>Identity</h2><p>A stable project-level reference such as <code>NTH-000001</code>.</p></article>
+      <article class="feature"><span class="feature-number">02</span><h2>Evidence</h2><p>What source or material was considered, when it was collected, and its integrity information.</p></article>
+      <article class="feature"><span class="feature-number">03</span><h2>Verification</h2><p>Which claim was evaluated, using which procedure, with what result and scope.</p></article>
+      <article class="feature"><span class="feature-number">04</span><h2>Lifecycle</h2><p>Historical events remain visible when a later event supersedes an earlier one.</p></article>
     </section>
-
     <section class="principles shell">
-      <div>
-        <div class="eyebrow">DESIGN PRINCIPLE</div>
-        <h2>Collect less. Prove more.</h2>
-      </div>
-      <p>
-        A valid record is not automatically a truthful record. The prototype deliberately
-        exposes the chain behind a result and avoids a universal trust score.
-      </p>
+      <div><div class="eyebrow">DESIGN PRINCIPLE</div><h2>Collect less. Prove more.</h2></div>
+      <p>A valid record is not automatically a truthful record. The prototype deliberately exposes the chain behind a result and avoids a universal trust score.</p>
     </section>
-
     <section class="demo shell">
       <div class="demo-panel">
-        <div>
-          <div class="eyebrow">PROTOTYPE</div>
-          <h2>See the verification graph</h2>
-          <p>Open the synthetic example to inspect its claims, evidence, event history and procedure.</p>
-        </div>
-        <a class="button secondary" href="./verify.html?id=NTH-000001">Open demo →</a>
+        <div><div class="eyebrow">PUBLIC REGISTRATION</div><h2>Create an identity record</h2><p>Use the browser extension or the web registration page to prepare a record, connect a compatible wallet and complete a paid enrollment when production payment is enabled.</p></div>
+        <a class="button secondary" href="./register.html">Open registration →</a>
       </div>
     </section>
   </main>
-
   <footer class="footer shell">
     <span>NOTHING v0.1 · Prototype / Research · Independent project, not affiliated with Nothing Technology Limited.</span>
-    <span>◇ Verify before claiming.</span>
+    <span><a href="./privacy.html">Privacy</a> · ◇ Verify before claiming.</span>
   </footer>
 </body>
 </html>
