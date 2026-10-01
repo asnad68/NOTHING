@@ -1,0 +1,38 @@
+name: Validate browser extension
+
+on:
+  push:
+    paths:
+      - "extension/**"
+      - "site/register.*"
+      - ".github/workflows/validate-browser-extension.yml"
+  pull_request:
+    paths:
+      - "extension/**"
+      - "site/register.*"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate manifests
+        run: |
+          python - <<'PY'
+          import json
+          for path in ("extension/manifest.chrome.json", "extension/manifest.firefox.json"):
+              json.load(open(path, encoding="utf-8"))
+              print("OK", path)
+          PY
+      - name: Package extensions
+        run: python extension/build.py all
+      - name: JavaScript syntax check
+        run: |
+          node --check extension/popup.js
+          node --check extension/options.js
+          node --check site/register.js
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: nothing-browser-extension
+          path: extension/dist/*.zip
