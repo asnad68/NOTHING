@@ -158,6 +158,11 @@
     $("payment-status").textContent = "Invoice expires at " + invoice.expires_at + ".";
   }
 
+  const utf8Hex = (value) => {
+    const bytes = new TextEncoder().encode(String(value));
+    return "0x" + [...bytes].map(b => b.toString(16).padStart(2, "0")).join("");
+  };
+
   const atomicHex = (n) => {
     const value = BigInt(String(n));
     if (value <= 0n) throw new Error("Payment amount must be positive.");
@@ -176,7 +181,8 @@
       params:[{
         from: walletAddress,
         to: invoice.recipient,
-        value: atomicHex(invoice.amount_atomic)
+        value: atomicHex(invoice.amount_atomic),
+        data: invoice.routing_reference ? utf8Hex("NOTHING|" + invoice.routing_reference) : "0x"
       }]
     });
     $("payment-status").textContent = "Transaction submitted. NOTHING is verifying it on-chain…";
