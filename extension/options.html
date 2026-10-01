@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <title>NOTHING Settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <main class="shell">
+    <header><div class="mark">◇</div><div><div class="eyebrow">NOTHING</div><h1>Extension settings</h1></div></header>
+    <section class="panel">
+      <p class="note">These URLs point the extension at your deployed NOTHING web application. They are not secrets.</p>
+      <label for="registrationUrl">Registration page URL</label>
+      <input id="registrationUrl" placeholder="https://your-domain.example/register.html">
+      <label for="verifyUrl">Verification page URL</label>
+      <input id="verifyUrl" placeholder="https://your-domain.example/verify.html">
+      <label for="docsUrl">Documentation URL</label>
+      <input id="docsUrl" placeholder="https://github.com/asnad68/NOTHING">
+      <div class="row"><button id="save">Save settings</button><span id="status"></span></div>
+    </section>
+    <section class="panel small">
+      <strong>Wallet security</strong>
+      <p>The extension never requests a seed phrase, private key or wallet export. Wallet payment happens on the deployed NOTHING web page through the user's wallet provider.</p>
+    </section>
+  </main>
+  <script src="options.js"></script>
+</body>
+</html>
