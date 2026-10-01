@@ -171,6 +171,41 @@ class EvmJsonRpcAdapter:
             value = _hex_int(tx.get("value"))
             if tx_to is None or value is None:
                 raise ChainAdapterError("native transaction is missing to/value")
+
+            routing_reference = None
+            if invoice.routing_reference is not None:
+                tx_input = tx.get("input")
+                expected_payload = f"NOTHING|{invoice.routing_reference}".encode("utf-8")
+                try:
+                    decoded_input = bytes.fromhex(
+                        str(tx_input)[2:]
+                    ) if isinstance(tx_input, str) and tx_input.startswith("0x") else b""
+                except ValueError:
+                    decoded_input = b""
+                if decoded_input != expected_payload:
+                    return PaymentObservation(
+                        network=self.network,
+                        asset_code=invoice.asset_code,
+                        asset_kind="native",
+                        destination=invoice.destination,
+                        amount_atomic=0,
+                        chain_event_key=chain_event_key(
+                            network=self.network,
+                            tx_hash=tx_hash,
+                            asset_kind="native",
+                        ),
+                        tx_hash=tx_hash,
+                        block_reference=receipt.get("blockHash"),
+                        confirmation_count=confirmations,
+                        finality_status="final" if final else "confirmed",
+                        success=False,
+                        observed_at=_utc_now(),
+                        source="evm-json-rpc",
+                        routing_mode="unique_destination",
+                        routing_reference=None,
+                    )
+                routing_reference = invoice.routing_reference
+
             if _norm_evm_address(tx_to) != destination:
                 amount = 0
             else:
@@ -194,7 +229,7 @@ class EvmJsonRpcAdapter:
                 observed_at=_utc_now(),
                 source="evm-json-rpc",
                 routing_mode="unique_destination",
-                routing_reference=None,
+                routing_reference=routing_reference,
             )
 
         transfer_topic = (
