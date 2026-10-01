@@ -1,0 +1,19 @@
+name: Package NOTHING browser extension
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Chrome and Firefox packages
+        run: python extension/build.py all
+      - name: Attach packages to workflow
+        uses: actions/upload-artifact@v4
+        with:
+          name: nothing-browser-extension-release
+          path: extension/dist/*.zip

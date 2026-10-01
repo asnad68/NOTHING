@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'">
+<meta name="description" content="Register a business identity with NOTHING.">
+<title>Register — NOTHING</title>
+<link rel="stylesheet" href="./assets/styles.css">
+<link rel="stylesheet" href="./register.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="./">◇ NOTHING</a>
+  <nav aria-label="Primary"><a href="./verify.html">Verify</a><a class="active" href="./register.html">Register</a><a href="./privacy.html">Privacy</a><a href="https://github.com/asnad68/NOTHING" rel="noreferrer">Repository</a></nav>
+</header>
+<main class="shell register-shell">
+  <section class="register-head">
+    <div><div class="eyebrow">NOTHING REGISTRATION</div><h1>Create a business identity record</h1><p class="lead">Registration records what the organization asserts. Payment unlocks the registration service; it does not automatically make a claim independently verified.</p></div>
+    <div id="registration-state" class="status status-neutral">SERVICE CHECK</div>
+  </section>
+  <section class="panel register-grid">
+    <div>
+      <div class="section-heading"><div><div class="eyebrow">1 · IDENTITY</div><h2>Business information</h2></div></div>
+      <label for="brandName">Business / brand name</label><input id="brandName" maxlength="180" autocomplete="organization">
+      <label for="businessType">Type</label>
+      <select id="businessType"><option value="business">Business</option><option value="brand">Brand</option><option value="digital_channel">Digital channel</option></select>
+      <label for="website">Official website</label><input id="website" maxlength="500" inputmode="url" placeholder="https://example.com">
+      <label for="domains">Official domains</label><textarea id="domains" rows="4" maxlength="1500" placeholder="example.com"></textarea>
+      <label for="channels">Official digital channels</label><textarea id="channels" rows="4" maxlength="2000" placeholder="https://www.linkedin.com/company/example"></textarea>
+      <label for="description">Public description</label><textarea id="description" rows="5" maxlength="2000" placeholder="Describe the organization in factual terms."></textarea>
+    </div>
+    <div>
+      <div class="section-heading"><div><div class="eyebrow">2 · WALLET</div><h2>Connect the payer wallet</h2></div></div>
+      <div id="wallet-list" class="wallet-list"><div class="muted">Discovering compatible wallets…</div></div>
+      <div id="wallet-state" class="wallet-state">No wallet connected.</div>
+      <div id="payment-box" class="payment-box" hidden>
+        <div class="mini-label">PAYMENT</div><div id="payment-copy">Loading…</div>
+        <button id="pay" class="primary full">Pay registration fee</button>
+        <div id="payment-status" class="note" aria-live="polite"></div>
+      </div>
+      <div class="warning-panel panel"><strong>Never enter a seed phrase or private key.</strong><div>NOTHING only uses a compatible wallet provider to connect and approve the transaction.</div></div>
+      <button id="demo" class="secondary full">Preview result (demo)</button>
+    </div>
+  </section>
+  <section id="result" class="panel result-panel" hidden>
+    <div class="success-mark">◇</div><div><div class="eyebrow">IDENTITY CREATED</div><div id="result-id" class="result-id">NTH-000000</div><h2 id="result-name">—</h2><p id="result-copy">—</p></div>
+  </section>
+  <section id="hologram" class="panel" hidden>
+    <div class="section-heading"><div><div class="eyebrow">NOTHING HOLOGRAM</div><h2>Public identity marker</h2></div><span class="status status-neutral">WEB BADGE</span></div>
+    <div class="hologram-layout"><div id="badge-preview" class="badge-preview"></div><div><p>Place this marker after the brand name. Clicking it opens the public NOTHING verification record.</p><textarea id="badge-snippet" rows="5" readonly></textarea><button id="download-badge" class="secondary">Download SVG badge</button></div></div>
+  </section>
+</main>
+<footer class="footer shell"><span>NOTHING v0.1 · Prototype / Research · Payment is deployment-gated.</span><a href="./verify.html">Verify →</a></footer>
+<script src="./config.js"></script><script src="./register.js" defer></script>
+</body>
+</html>
