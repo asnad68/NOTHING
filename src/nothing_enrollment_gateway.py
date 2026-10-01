@@ -265,6 +265,9 @@ class Handler(BaseHTTPRequestHandler):
                     idem = "enrollment-quote:" + hashlib.sha256(
                         (wallet + ":" + fingerprint + ":" + PRICE_ID).encode("utf-8")
                     ).hexdigest()
+                    route_reference = hashlib.sha256(
+                        (wallet + ":" + fingerprint + ":" + PRICE_ID + ":routing").encode("utf-8")
+                    ).hexdigest()[:32]
                     invoice = billing.create_invoice(
                         customer_ref=_customer_ref(wallet),
                         plan_code=PLAN_CODE,
@@ -273,6 +276,8 @@ class Handler(BaseHTTPRequestHandler):
                         expires_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc) + __import__("datetime").timedelta(minutes=15),
                         actor=ACTOR,
                         client_request_fingerprint=fingerprint,
+                        settlement_routing_mode="unique_destination",
+                        settlement_routing_reference=route_reference,
                     )
                 finally:
                     store.close()
@@ -286,6 +291,7 @@ class Handler(BaseHTTPRequestHandler):
                     "amount_display": str(invoice.amount_atomic / (10 ** invoice.asset_decimals)),
                     "recipient": invoice.destination,
                     "chain_id": hex(EVM_CHAIN_ID),
+                    "routing_reference": invoice.routing_reference,
                     "expires_at": invoice.expires_at.isoformat().replace("+00:00", "Z"),
                 }})
                 return
