@@ -50,8 +50,8 @@ from src.nothing_identity_control import (
     verify_siwe_signature,
 )
 
-HOST = os.getenv("NOTHING_ENROLLMENT_API_HOST", "127.0.0.1")
-PORT = int(os.getenv("NOTHING_ENROLLMENT_API_PORT", "8090"))
+HOST = os.getenv("NOTHING_ENROLLMENT_API_HOST", "0.0.0.0")
+PORT = int(os.getenv("NOTHING_ENROLLMENT_API_PORT", os.getenv("PORT", "8090")))
 ENABLED = os.getenv("NOTHING_ENROLLMENT_ENABLED", "false").lower() in {"1", "true", "yes"}
 PLAN_CODE = os.getenv("NOTHING_ENROLLMENT_PLAN_CODE", "business-registration").strip()
 PRICE_ID = os.getenv("NOTHING_ENROLLMENT_PRICE_ID", "").strip()
@@ -64,6 +64,7 @@ ALLOWED_ORIGIN = os.getenv("NOTHING_ENROLLMENT_ALLOWED_ORIGIN", "").strip()
 MAX_BODY = max(1024, int(os.getenv("NOTHING_ENROLLMENT_MAX_BODY_BYTES", "65536")))
 RATE_WINDOW = max(1, int(os.getenv("NOTHING_ENROLLMENT_RATE_WINDOW_SECONDS", "60")))
 RATE_MAX = max(1, int(os.getenv("NOTHING_ENROLLMENT_RATE_LIMIT_MAX_REQUESTS", "10")))
+HTTP_REQUEST_TIMEOUT_SECONDS = max(1.0, float(os.getenv("NOTHING_HTTP_REQUEST_TIMEOUT_SECONDS", "15")))
 DOMAIN_CHALLENGE_SECRET = os.getenv("NOTHING_DOMAIN_CHALLENGE_SECRET", "").strip()
 DOMAIN_CHALLENGE_TTL_SECONDS = max(300, min(86400, int(os.getenv("NOTHING_DOMAIN_CHALLENGE_TTL_SECONDS", "1800"))))
 IDENTITY_CONTROL_ENABLED = os.getenv("NOTHING_IDENTITY_CONTROL_ENABLED", "false").lower() in {"1", "true", "yes"}
@@ -310,10 +311,14 @@ def _public_identity(
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+
+    def setup(self) -> None:
+        super().setup()
+        self.connection.settimeout(HTTP_REQUEST_TIMEOUT_SECONDS)
     server_version = "NOTHING-Enrollment/0.1"
 
-    def _send(self, status: int, payload: dict[str, Any]) -> None:
-        body = _json_bytes(payload)
+    def _send(self, status: int, payload: dict[str, Any] | None) -> None:
+        body = _json_bytes(payload) if payload is not None else b""
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -325,6 +330,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Idempotency-Key")
         self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         self.end_headers()
         if body:
             self.wfile.write(body)
@@ -338,18 +344,47 @@ class Handler(BaseHTTPRequestHandler):
         self._error(429, "RATE_LIMITED", "Too many enrollment requests.")
         return False
 
+    def _origin_allowed(self) -> bool:
+        origin = self.headers.get("Origin")
+        if not origin or not ALLOWED_ORIGIN:
+            return True
+        return origin == ALLOWED_ORIGIN
+
+    def _require_allowed_origin(self) -> bool:
+        if self._origin_allowed():
+            return True
+        self._error(403, "ORIGIN_NOT_ALLOWED", "Browser origin is not authorized for this enrollment service.")
+        return False
+
     def do_OPTIONS(self) -> None:
-        self._send(204, {})
+        if not self._origin_allowed():
+            self._send(403, {"error": {"code": "ORIGIN_NOT_ALLOWED", "detail": "Browser origin is not authorized for this enrollment service.", "status": 403}})
+            return
+        self._send(204, None)
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/") or "/"
         if not self._limit():
             return
-        if path == "/healthz":
-            self._send(200, {"status": "ok", "enabled": ENABLED})
+        if path in {"/healthz", "/readyz"}:
+            try:
+                store = PostgreSQLNothingStore.from_environment()
+                try:
+                    healthy = bool(store.health())
+                finally:
+                    store.close()
+            except Exception:
+                healthy = False
+            if path == "/healthz":
+                self._send(200 if healthy else 503, {"status": "ok" if healthy else "degraded", "enabled": ENABLED, "database": healthy})
+            else:
+                self._send(200 if healthy else 503, {"status": "ready" if healthy else "not_ready", "database": healthy})
             return
         if path == "/v1/organization/domain-challenge":
+            if not IDENTITY_CONTROL_ENABLED:
+                self._error(503, "IDENTITY_CONTROL_UNAVAILABLE", "Official organization registration is not activated on this deployment.")
+                return
             if len(DOMAIN_CHALLENGE_SECRET) < 32:
                 self._error(503, "DOMAIN_VERIFICATION_UNAVAILABLE", "Domain verification is not configured on this deployment.")
                 return
@@ -402,6 +437,8 @@ class Handler(BaseHTTPRequestHandler):
         self._error(404, "NOT_FOUND", "Enrollment endpoint does not exist.")
 
     def do_POST(self) -> None:
+        if not self._require_allowed_origin():
+            return
         path = urlparse(self.path).path.rstrip("/") or "/"
         if not self._limit():
             return
@@ -460,6 +497,57 @@ class Handler(BaseHTTPRequestHandler):
                 self._error(503, "IDENTITY_CONTROL_UNAVAILABLE", "The wallet authentication challenge could not be issued.")
             return
 
+        if path == "/v1/auth/google/challenge":
+            store = None
+            try:
+                _require_identity_control()
+                if not GOOGLE_CLIENT_ID:
+                    raise RuntimeError("Google authentication is not configured on this deployment")
+                payload = _safe_json(_read_body(self))
+                registration = RegistrationDraft.from_mapping(payload.get("registration", {}))
+                requested_domain = normalize_domain(payload.get("requested_domain", ""))
+                if requested_domain not in {normalize_domain(value) for value in registration.domains}:
+                    raise EnrollmentValidationError("requested_domain must be one of the submitted official domains")
+                public_origin, _ = _expected_public_origin()
+                issued = datetime.now(timezone.utc).replace(microsecond=0)
+                expires = issued + timedelta(seconds=WALLET_CHALLENGE_TTL_SECONDS)
+                nonce = secrets.token_urlsafe(32)
+                challenge_id = str(uuid.uuid4())
+                binding = f"google_oidc|{challenge_id}|{registration.digest()}|{nonce}"
+                message_sha256 = hashlib.sha256(binding.encode("utf-8")).hexdigest()
+                store = PostgreSQLNothingStore.from_environment()
+                store.create_auth_challenge(
+                    challenge_id=challenge_id,
+                    purpose="google_oidc",
+                    nonce=nonce,
+                    wallet_address=None,
+                    domain=requested_domain,
+                    uri=public_origin,
+                    chain_id=EVM_CHAIN_ID,
+                    message_sha256=message_sha256,
+                    issued_at=_iso_z(issued),
+                    expires_at=_iso_z(expires),
+                    actor=ACTOR,
+                )
+                self._send(200, {"data": {
+                    "challenge_id": challenge_id,
+                    "nonce": nonce,
+                    "expires_at": _iso_z(expires),
+                    "domain": requested_domain,
+                }})
+            except EnrollmentValidationError as exc:
+                self._error(400, "INVALID_REQUEST", str(exc))
+            except RuntimeError as exc:
+                self._error(503, "IDENTITY_CONTROL_UNAVAILABLE", str(exc))
+            except StoreError:
+                self._error(503, "IDENTITY_CONTROL_UNAVAILABLE", "Authentication challenge storage is unavailable.")
+            except Exception:
+                self._error(503, "IDENTITY_CONTROL_UNAVAILABLE", "The Google authentication challenge could not be issued.")
+            finally:
+                if store is not None:
+                    store.close()
+            return
+
         if path == "/v1/organization/google-authorize":
             store = None
             try:
@@ -473,12 +561,31 @@ class Handler(BaseHTTPRequestHandler):
                 requested_domain = normalize_domain(payload.get("requested_domain", ""))
                 if requested_domain not in {normalize_domain(value) for value in registration.domains}:
                     raise EnrollmentValidationError("requested_domain must be one of the submitted official domains")
-                if not id_token or not domain_token:
-                    raise EnrollmentValidationError("id_token and domain_challenge are required")
+                challenge_id = str(payload.get("google_challenge_id", "")).strip()
+                if not id_token or not domain_token or not challenge_id:
+                    raise EnrollmentValidationError("google_challenge_id, id_token and domain_challenge are required")
+                store = PostgreSQLNothingStore.from_environment()
+                challenge = store.get_auth_challenge(challenge_id)
+                if (
+                    challenge["purpose"] != "google_oidc"
+                    or challenge["authorization_status"] != "PENDING"
+                    or challenge["consumed_at"]
+                ):
+                    raise ConflictError("Google authentication challenge is not available")
+                now = datetime.now(timezone.utc)
+                expires = datetime.fromisoformat(str(challenge["expires_at"]).replace("Z", "+00:00"))
+                if expires <= now:
+                    raise ConflictError("Google authentication challenge has expired")
+                expected_binding = hashlib.sha256(
+                    f"google_oidc|{challenge['challenge_id']}|{registration.digest()}|{challenge['nonce']}".encode("utf-8")
+                ).hexdigest()
+                if expected_binding != str(challenge["message_sha256"]).lower():
+                    raise IdentityControlError("Google authentication challenge is not bound to this registration")
                 claims = verify_google_id_token(
                     id_token,
                     client_id=GOOGLE_CLIENT_ID,
                     expected_domain=requested_domain,
+                    expected_nonce=str(challenge["nonce"]),
                 )
                 principal = verify_google_workspace_principal(
                     subject=str(claims["sub"]),
@@ -507,17 +614,6 @@ class Handler(BaseHTTPRequestHandler):
                     }})
                     return
 
-                public_origin, _ = _expected_public_origin()
-                now = datetime.now(timezone.utc)
-                exp = int(claims["exp"])
-                token_expiry = datetime.fromtimestamp(exp, timezone.utc)
-                expires = min(now + timedelta(seconds=WALLET_CHALLENGE_TTL_SECONDS), token_expiry)
-                if expires <= now:
-                    raise ConflictError("Google ID token is expired")
-                challenge_id = str(uuid.uuid4())
-                nonce = secrets.token_hex(24)
-                binding = f"{claims['sub']}|{registration.digest()}|{nonce}"
-                message_hash = hashlib.sha256(binding.encode("utf-8")).hexdigest()
                 authorization = {
                     "registration_digest": registration.digest(),
                     "brand_name": registration.name,
@@ -529,36 +625,19 @@ class Handler(BaseHTTPRequestHandler):
                     "authorization_method": "google_oidc+dns_txt",
                     "authorized_at": _iso_z(now),
                 }
-                store = PostgreSQLNothingStore.from_environment()
-                try:
-                    store.create_auth_challenge(
-                        challenge_id=challenge_id,
-                        purpose="google_oidc",
-                        nonce=nonce,
-                        wallet_address=None,
-                        domain=requested_domain,
-                        uri=public_origin,
-                        chain_id=EVM_CHAIN_ID,
-                        message_sha256=message_hash,
-                        issued_at=_iso_z(now),
-                        expires_at=_iso_z(expires),
-                        actor=ACTOR,
-                    )
-                    saved = store.authorize_google_challenge(
-                        challenge_id,
-                        nonce=nonce,
-                        message_sha256=message_hash,
-                        authorization=authorization,
-                        now=_iso_z(now),
-                        actor=ACTOR,
-                    )
-                finally:
-                    store.close()
+                saved = store.authorize_google_challenge(
+                    challenge["challenge_id"],
+                    nonce=str(challenge["nonce"]),
+                    message_sha256=str(challenge["message_sha256"]),
+                    authorization=authorization,
+                    now=_iso_z(now),
+                    actor=ACTOR,
+                )
                 if not saved:
                     raise ConflictError("Google authorization could not be persisted")
                 self._send(200, {"data": {
                     "authorized": True,
-                    "authorization_challenge_id": challenge_id,
+                    "authorization_challenge_id": challenge["challenge_id"],
                     "decision": {
                         "state": decision.state,
                         "reason": decision.reason,
@@ -702,6 +781,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/v1/organization/domain-verify":
             try:
+                _require_identity_control()
                 payload = _safe_json(_read_body(self))
                 domain = normalize_domain(payload.get("domain", ""))
                 token = str(payload.get("challenge", "")).strip()
