@@ -250,7 +250,14 @@
   }
 
   fillDraft(decodeDraft());
-  discoverWallets();
+  if (API_BASE) {
+    discoverWallets();
+  } else {
+    $("wallet-list").innerHTML =
+      '<div class="muted"><strong>Demo mode.</strong> Wallet connection is disabled until the live enrollment API is configured.</div>';
+    $("wallet-state").textContent = "Demo mode: no wallet connection or transaction is requested.";
+    $("payment-box").hidden = true;
+  }
   loadConfig();
   $("pay").addEventListener("click", async () => {
     try { await pay(); } catch (e) { $("payment-status").textContent = e.message; }
