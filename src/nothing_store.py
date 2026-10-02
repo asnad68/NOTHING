@@ -45,7 +45,7 @@ from src.nothing_verify import (
     validate_verification_event,
 )
 
-STORAGE_SCHEMA_VERSION = 4
+STORAGE_SCHEMA_VERSION = 5
 DEFAULT_DB_PATH = Path("data/nothing.db")
 
 
@@ -175,6 +175,17 @@ class NothingStore(Protocol):
         nonce: str,
         message_sha256: str,
         decision: Mapping[str, Any],
+        now: str,
+        actor: str = "auth",
+    ) -> bool:
+        ...
+
+    def consume_auth_authorization(
+        self,
+        challenge_id: str,
+        *,
+        registration_digest: str,
+        wallet_address: str,
         now: str,
         actor: str = "auth",
     ) -> bool:
@@ -554,6 +565,7 @@ class SQLiteNothingStore:
             (2, MIGRATION_002),
             (3, MIGRATION_003),
             (4, MIGRATION_004),
+            (5, MIGRATION_005),
         )
         with self._connect() as connection:
             connection.execute(
@@ -810,6 +822,82 @@ class SQLiteNothingStore:
                 return changed
             except Exception:
                 connection.execute("ROLLBACK")
+                raise
+
+    def consume_auth_authorization(
+        self,
+        challenge_id: str,
+        *,
+        registration_digest: str,
+        wallet_address: str,
+        now: str,
+        actor: str = "auth",
+    ) -> bool:
+        challenge_id = str(challenge_id or "").strip()
+        registration_digest = str(registration_digest or "").strip().lower()
+        wallet_address = str(wallet_address or "").strip().lower()
+        now = str(now).strip()
+        actor = str(actor).strip()
+        if not challenge_id or len(registration_digest) != 64 or not wallet_address or not now or not actor:
+            raise ValueError("invalid authentication authorization consumption")
+        with self._connect() as connection:
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                row = connection.execute(
+                    """
+                    SELECT authorization_json, wallet_address, authorization_status,
+                           registration_consumed_at, expires_at
+                    FROM auth_challenges
+                    WHERE challenge_id = ?
+                    """,
+                    (challenge_id,),
+                ).fetchone()
+                if row is None:
+                    connection.execute("ROLLBACK")
+                    raise NotFoundError(challenge_id)
+                authorization = json.loads(row["authorization_json"]) if row["authorization_json"] else {}
+                valid = (
+                    row["authorization_status"] == "AUTHORIZED"
+                    and row["registration_consumed_at"] is None
+                    and str(row["wallet_address"] or "").lower() == wallet_address
+                    and str(authorization.get("registration_digest", "")).lower() == registration_digest
+                    and _parse_time(str(row["expires_at"])) > _parse_time(now)
+                )
+                if not valid:
+                    connection.execute("ROLLBACK")
+                    return False
+                cursor = connection.execute(
+                    """
+                    UPDATE auth_challenges
+                    SET registration_consumed_at = ?
+                    WHERE challenge_id = ?
+                      AND authorization_status = 'AUTHORIZED'
+                      AND registration_consumed_at IS NULL
+                    """,
+                    (now, challenge_id),
+                )
+                changed = cursor.rowcount == 1
+                if changed:
+                    connection.execute(
+                        """
+                        INSERT INTO audit_log(
+                            recorded_at, actor, action, record_type, record_id, details_json
+                        ) VALUES (?, ?, 'CONSUME', 'auth_challenge', ?, ?)
+                        """,
+                        (
+                            now,
+                            actor,
+                            challenge_id,
+                            json.dumps({"registration_consumed": True}, separators=(",", ":")),
+                        ),
+                    )
+                connection.execute("COMMIT")
+                return changed
+            except Exception:
+                try:
+                    connection.execute("ROLLBACK")
+                except Exception:
+                    pass
                 raise
 
     @staticmethod
