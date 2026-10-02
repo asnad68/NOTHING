@@ -323,6 +323,121 @@ def verify_siwe_signature(
     return wallet_principal(subject=fields["address"], address=fields["address"])
 
 
+def issue_domain_challenge_token(domain: str, secret: str, *, now: datetime | None = None, ttl_seconds: int = 1800) -> DomainControlChallenge:
+    """Issue a signed, expiring DNS challenge without requiring mutable challenge state."""
+    domain = normalize_domain(domain)
+    if not isinstance(secret, str) or len(secret) < 32:
+        raise IdentityControlError("domain challenge secret must be at least 32 characters")
+    if not 300 <= ttl_seconds <= 86400:
+        raise IdentityControlError("domain challenge TTL must be between 5 minutes and 24 hours")
+    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).replace(microsecond=0)
+    expires = int(current.timestamp()) + ttl_seconds
+    nonce = secrets.token_urlsafe(24)
+    unsigned = f"v1|{domain}|{expires}|{nonce}"
+    signature = hashlib.sha256((secret + "|" + unsigned).encode("utf-8")).hexdigest()
+    token = f"{unsigned}|{signature}"
+    return build_domain_challenge(domain, challenge=token)
+
+
+def verify_domain_challenge_token(
+    token: str,
+    domain: str,
+    secret: str,
+    *,
+    now: datetime | None = None,
+) -> bool:
+    """Verify an issued challenge token before consulting DNS."""
+    domain = normalize_domain(domain)
+    if not isinstance(secret, str) or len(secret) < 32:
+        return False
+    parts = str(token or "").split("|")
+    if len(parts) != 5 or parts[0] != "v1":
+        return False
+    _, token_domain, expires_text, nonce, provided_signature = parts
+    if token_domain != domain or not NONCE_RE.fullmatch(nonce):
+        return False
+    try:
+        expires = int(expires_text)
+    except ValueError:
+        return False
+    if expires <= int((now or datetime.now(timezone.utc)).timestamp()):
+        return False
+    unsigned = f"v1|{token_domain}|{expires}|{nonce}"
+    expected_signature = hashlib.sha256((secret + "|" + unsigned).encode("utf-8")).hexdigest()
+    return secrets.compare_digest(provided_signature, expected_signature)
+
+
+def verify_google_id_token(
+    id_token: str,
+    *,
+    client_id: str,
+    expected_domain: str | None = None,
+    jwks_client: Any | None = None,
+) -> dict[str, Any]:
+    """Verify a Google OpenID Connect ID token and return safe claims.
+
+    The caller must still apply organization authorization and domain-control
+    policy. A valid Google identity token authenticates a user; it does not prove
+    company authority.
+    """
+    if not client_id:
+        raise IdentityControlError("Google client_id is not configured")
+    try:
+        import jwt
+        from jwt import PyJWKClient
+    except ImportError as exc:
+        raise IdentityControlError("PyJWT[crypto] is required for Google authentication") from exc
+
+    token = str(id_token or "").strip()
+    if not token:
+        raise IdentityControlError("Google ID token is required")
+    client = jwks_client or PyJWKClient(
+        "https://www.googleapis.com/oauth2/v3/certs",
+        cache_jwk_set=True,
+        lifespan=300,
+        timeout=5,
+        cache_keys=True,
+    )
+    try:
+        header = jwt.get_unverified_header(token)
+        if header.get("alg") != "RS256":
+            raise IdentityControlError("Google ID token must use RS256")
+        signing_key = client.get_signing_key_from_jwt(token)
+        claims = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["RS256"],
+            audience=client_id,
+            options={"require": ["iss", "sub", "aud", "exp", "iat", "email", "email_verified"]},
+        )
+    except IdentityControlError:
+        raise
+    except Exception as exc:
+        raise IdentityControlError("Google ID token could not be verified") from exc
+
+    issuer = str(claims.get("iss", "")).rstrip("/")
+    if issuer not in {"https://accounts.google.com", "accounts.google.com"}:
+        raise IdentityControlError("Google ID token issuer is not accepted")
+    if claims.get("email_verified") is not True:
+        raise IdentityControlError("Google email is not verified")
+
+    email = str(claims.get("email", "")).strip().lower()
+    email_domain = domain_from_email(email)
+    hd = claims.get("hd")
+    hosted_domain = normalize_domain(hd) if isinstance(hd, str) and hd else None
+
+    result = dict(claims)
+    result["email"] = email
+    result["email_domain"] = email_domain
+    result["hosted_domain"] = hosted_domain
+
+    if expected_domain is not None:
+        expected = normalize_domain(expected_domain)
+        if email_domain != expected or hosted_domain != expected:
+            raise IdentityControlError("Google identity is not bound to the expected organization domain")
+    return result
+
+
 def evaluate_official_claim(
     *,
     brand_name: str,
