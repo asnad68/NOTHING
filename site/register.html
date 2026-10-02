@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://accounts.google.com; style-src 'self'; img-src 'self' data:; connect-src 'self' https: https://accounts.google.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'">
 <meta name="description" content="Register a business identity with NOTHING.">
 <title>Register — NOTHING</title>
 <link rel="stylesheet" href="./assets/styles.css">
@@ -31,7 +31,44 @@
       <label for="description">Public description</label><textarea id="description" rows="5" maxlength="2000" placeholder="Describe the organization in factual terms."></textarea>
     </div>
     <div>
-      <div class="section-heading"><div><div class="eyebrow">2 · WALLET</div><h2>Wallet connection is currently disabled</h2></div></div>
+      <div class="section-heading"><div><div class="eyebrow">2 · REGISTRATION MODE</div><h2>Choose the claim level</h2></div></div>
+      <label for="registrationMode">Registration mode</label>
+      <select id="registrationMode">
+        <option value="self">Self-claimed registration</option>
+        <option value="official">Official organization registration</option>
+      </select>
+      <div id="official-box" class="official-box" hidden>
+        <div class="official-title">OFFICIAL ORGANIZATION CONTROL</div>
+        <p class="muted">Official status requires independent control of an organization domain and an authenticated principal bound to that domain. A personal Gmail account, an unrelated wallet, or a payment alone is not enough.</p>
+        <label for="organizationDomain">Organization domain</label>
+        <input id="organizationDomain" maxlength="253" placeholder="example.com" autocomplete="off">
+        <div class="official-actions">
+          <button id="get-domain-challenge" class="secondary">Get DNS challenge</button>
+          <button id="verify-domain" class="secondary" disabled>Verify domain control</button>
+        </div>
+        <div id="domain-state" class="note" aria-live="polite"></div>
+        <div id="domain-challenge" class="challenge-box" hidden>
+          <div class="mini-label">DNS TXT RECORD</div>
+          <div><code id="domain-record-name">_nothing-challenge.example.com</code></div>
+          <div><code id="domain-record-value">NOTHING-DOMAIN-VERIFICATION=…</code></div>
+          <p id="domain-instructions" class="muted">Add this TXT record to the organization DNS, then verify it.</p>
+        </div>
+        <div class="auth-buttons">
+          <div>
+            <div class="mini-label">GOOGLE WORKSPACE</div>
+            <div id="google-signin-button"></div>
+            <div id="google-state" class="note" aria-live="polite"></div>
+          </div>
+          <div>
+            <div class="mini-label">WALLET SIGN-IN</div>
+            <button id="wallet-auth" class="secondary full" type="button">Sign in with wallet</button>
+            <div id="wallet-auth-state" class="note" aria-live="polite"></div>
+          </div>
+        </div>
+        <div id="official-status" class="status status-neutral">Official authorization not completed.</div>
+      </div>
+
+      <div class="section-heading wallet-heading"><div><div class="eyebrow">3 · WALLET</div><h2>Wallet connection is currently disabled</h2></div></div>
       <div id="wallet-list" class="wallet-list"><div class="muted">Wallet connection is available only when live payment service is enabled.</div></div>
       <div id="wallet-state" class="wallet-state">The public prototype does not request wallet access while the deployment is under security review.</div>
       <div id="payment-box" class="payment-box" hidden>
@@ -39,7 +76,7 @@
         <button id="pay" class="primary full">Pay registration fee</button>
         <div id="payment-status" class="note" aria-live="polite"></div>
       </div>
-      <div class="warning-panel panel"><strong>Never enter a seed phrase or private key.</strong><div>NOTHING never requires a seed phrase or private key. Wallet access remains disabled on the public prototype until the domain and payment boundary complete security review.</div></div>
+      <div class="warning-panel panel"><strong>Never enter a seed phrase or private key.</strong><div>NOTHING never requires a seed phrase or private key. Wallet sign-in asks only for a readable sign-in signature; payment, when enabled, is a separate transaction.</div></div>
       <button id="demo" class="secondary full">Preview result (demo)</button>
     </div>
   </section>
