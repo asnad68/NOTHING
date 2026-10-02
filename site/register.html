@@ -31,15 +31,15 @@
       <label for="description">Public description</label><textarea id="description" rows="5" maxlength="2000" placeholder="Describe the organization in factual terms."></textarea>
     </div>
     <div>
-      <div class="section-heading"><div><div class="eyebrow">2 · WALLET</div><h2>Connect the payer wallet</h2></div></div>
+      <div class="section-heading"><div><div class="eyebrow">2 · WALLET</div><h2>Wallet connection is currently disabled</h2></div></div>
       <div id="wallet-list" class="wallet-list"><div class="muted">Wallet connection is available only when live payment service is enabled.</div></div>
-      <div id="wallet-state" class="wallet-state">Demo mode: no wallet connection or transaction is requested.</div>
+      <div id="wallet-state" class="wallet-state">The public prototype does not request wallet access while the deployment is under security review.</div>
       <div id="payment-box" class="payment-box" hidden>
         <div class="mini-label">PAYMENT</div><div id="payment-copy">Loading…</div>
         <button id="pay" class="primary full">Pay registration fee</button>
         <div id="payment-status" class="note" aria-live="polite"></div>
       </div>
-      <div class="warning-panel panel"><strong>Never enter a seed phrase or private key.</strong><div>NOTHING only uses a compatible wallet provider to connect and approve the transaction.</div></div>
+      <div class="warning-panel panel"><strong>Never enter a seed phrase or private key.</strong><div>NOTHING never requires a seed phrase or private key. Wallet access remains disabled on the public prototype until the domain and payment boundary complete security review.</div></div>
       <button id="demo" class="secondary full">Preview result (demo)</button>
     </div>
   </section>
