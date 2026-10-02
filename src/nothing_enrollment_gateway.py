@@ -716,6 +716,7 @@ class Handler(BaseHTTPRequestHandler):
                     }})
                     return
                 controlled = _verify_domain_control(domain, token)
+                challenge = build_domain_challenge(domain, challenge=token)
                 self._send(200, {"data": {
                     "domain_controlled": controlled,
                     "domain": domain,
