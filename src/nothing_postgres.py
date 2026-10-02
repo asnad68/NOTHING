@@ -341,7 +341,8 @@ class PostgreSQLNothingStore:
                 """
                 SELECT challenge_id, purpose, nonce, wallet_address, domain, uri,
                        chain_id, message_sha256, issued_at, expires_at,
-                       consumed_at, authorization_status, authorization_json, created_at
+                       consumed_at, authorization_status, authorization_json, created_at,
+                       registration_consumed_at
                 FROM auth_challenges
                 WHERE challenge_id = %s
                 """,
@@ -364,6 +365,7 @@ class PostgreSQLNothingStore:
             "authorization_status": row["authorization_status"],
             "authorization": row["authorization_json"],
             "created_at": row["created_at"].isoformat(),
+            "registration_consumed_at": row["registration_consumed_at"].isoformat() if row["registration_consumed_at"] else None,
         }
 
     @_translate_database_errors
@@ -417,6 +419,61 @@ class PostgreSQLNothingStore:
                             actor,
                             challenge_id,
                             json.dumps({"authorization_status": "AUTHORIZED"}, separators=(",", ":")),
+                        ),
+                    )
+                return changed
+
+    @_translate_database_errors
+    def authorize_google_challenge(
+        self,
+        challenge_id: str,
+        *,
+        nonce: str,
+        message_sha256: str,
+        authorization: Mapping[str, Any],
+        now: str,
+        actor: str = "auth",
+    ) -> bool:
+        challenge_id = str(challenge_id or "").strip()
+        nonce = str(nonce or "").strip()
+        message_sha256 = str(message_sha256 or "").strip().lower()
+        actor = str(actor).strip()
+        now = str(now).strip()
+        if not challenge_id or not nonce or len(message_sha256) != 64 or not actor or not now:
+            raise ValueError("invalid Google authentication authorization")
+        payload_json = _canonical_json(dict(authorization))
+        with self._pool.connection() as connection:
+            with connection.transaction():
+                row = connection.execute(
+                    """
+                    UPDATE auth_challenges
+                    SET consumed_at = %s::timestamptz,
+                        authorization_status = 'AUTHORIZED',
+                        authorization_json = %s::jsonb
+                    WHERE challenge_id = %s
+                      AND purpose = 'google_oidc'
+                      AND nonce = %s
+                      AND message_sha256 = %s
+                      AND consumed_at IS NULL
+                      AND authorization_status = 'PENDING'
+                      AND expires_at > %s::timestamptz
+                    RETURNING challenge_id
+                    """,
+                    (now, payload_json, challenge_id, nonce, message_sha256, now),
+                ).fetchone()
+                changed = row is not None
+                if changed:
+                    connection.execute(
+                        """
+                        INSERT INTO audit_log(
+                            recorded_at, actor, action, record_type, record_id, details_json
+                        ) VALUES (%s::timestamptz, %s, 'AUTHORIZE', 'auth_challenge', %s, %s)
+                        """,
+                        (
+                            now,
+                            actor,
+                            challenge_id,
+                            json.dumps({"authorization_status": "AUTHORIZED", "purpose": "google_oidc"}, separators=(",", ":")),
                         ),
                     )
                 return changed
@@ -482,16 +539,16 @@ class PostgreSQLNothingStore:
         challenge_id: str,
         *,
         registration_digest: str,
-        wallet_address: str,
+        wallet_address: str | None,
         now: str,
         actor: str = "auth",
     ) -> bool:
         challenge_id = str(challenge_id or "").strip()
         registration_digest = str(registration_digest or "").strip().lower()
-        wallet_address = str(wallet_address or "").strip().lower()
+        wallet_address = str(wallet_address or "").strip().lower() if wallet_address else None
         now = str(now).strip()
         actor = str(actor).strip()
-        if not challenge_id or len(registration_digest) != 64 or not wallet_address or not now or not actor:
+        if not challenge_id or len(registration_digest) != 64 or not now or not actor:
             raise ValueError("invalid authentication authorization consumption")
         with self._pool.connection() as connection:
             with connection.transaction():
@@ -502,7 +559,10 @@ class PostgreSQLNothingStore:
                     WHERE challenge_id = %s
                       AND authorization_status = 'AUTHORIZED'
                       AND registration_consumed_at IS NULL
-                      AND wallet_address = %s
+                      AND (
+                          purpose = 'google_oidc'
+                          OR (purpose = 'wallet_siwe' AND wallet_address = %s)
+                      )
                       AND expires_at > %s::timestamptz
                       AND COALESCE(authorization_json->>'registration_digest', '') = %s
                     RETURNING challenge_id
