@@ -2,11 +2,17 @@
   "use strict";
   const API_BASE = String(window.NOTHING_ENROLLMENT_API_BASE || window.NOTHING_API_BASE || "").replace(/\/$/, "");
   const WALLET_ENABLED = window.NOTHING_WALLET_ENABLED === true;
+  const IDENTITY_CONTROL_ENABLED = window.NOTHING_IDENTITY_CONTROL_ENABLED === true;
+  const WALLET_AUTH_ENABLED = window.NOTHING_WALLET_AUTH_ENABLED === true;
+  const GOOGLE_CLIENT_ID = String(window.NOTHING_GOOGLE_CLIENT_ID || "").trim();
   const $ = (id) => document.getElementById(id);
   const providers = new Map();
   let selectedProvider = null;
   let walletAddress = null;
   let invoice = null;
+  let domainChallenge = null;
+  let officialAuthorizationChallengeId = null;
+  let googleInitialized = false;
 
   const htmlEscape = (v) => String(v ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;");
   const xmlEscape = (v) => htmlEscape(v);
@@ -21,6 +27,183 @@
       history.replaceState(null, "", location.pathname + location.search);
       return draft;
     } catch { return null; }
+  }
+
+  function isOfficialMode() {
+    return $("registrationMode")?.value === "official";
+  }
+
+  function requestedDomain() {
+    const value = $("organizationDomain").value.trim().toLowerCase().replace(/\.$/, "");
+    if (!value || !value.includes(".") || /\s/.test(value)) {
+      throw new Error("Enter the organization domain, for example example.com.");
+    }
+    return value;
+  }
+
+  function officialStatus(message, ok = false) {
+    const el = $("official-status");
+    el.textContent = message;
+    el.className = "status " + (ok ? "status-ok" : "status-neutral");
+  }
+
+  async function getDomainChallenge() {
+    if (!IDENTITY_CONTROL_ENABLED) throw new Error("Official organization registration is disabled on this deployment.");
+    const domain = requestedDomain();
+    const response = await apiJson("/v1/organization/domain-challenge?domain=" + encodeURIComponent(domain));
+    domainChallenge = response.data || response;
+    $("domain-record-name").textContent = domainChallenge.record_name;
+    $("domain-record-value").textContent = domainChallenge.record_value;
+    $("domain-challenge").hidden = false;
+    $("verify-domain").disabled = false;
+    $("domain-state").textContent = "Add the TXT record exactly as shown, then verify domain control.";
+    officialAuthorizationChallengeId = null;
+    officialStatus("Domain challenge issued. Organization control is not yet verified.");
+  }
+
+  async function verifyDomain() {
+    if (!domainChallenge?.challenge_digest) throw new Error("Get a DNS challenge first.");
+    const domain = requestedDomain();
+    const response = await apiJson("/v1/organization/domain-verify", {
+      method: "POST",
+      body: JSON.stringify({
+        domain,
+        challenge: domainChallenge.challenge
+      })
+    });
+    const data = response.data || response;
+    if (!data.domain_controlled) {
+      $("domain-state").textContent = "DNS verification did not find the required TXT record yet.";
+      officialStatus("Domain not independently verified.");
+      return false;
+    }
+    $("domain-state").textContent = "Domain control verified for " + data.domain + ".";
+    officialStatus("Domain control verified. Complete Google or wallet authorization.", true);
+    return true;
+  }
+
+  async function loadGoogleSignIn() {
+    if (googleInitialized || !IDENTITY_CONTROL_ENABLED || !GOOGLE_CLIENT_ID) {
+      if (IDENTITY_CONTROL_ENABLED && !GOOGLE_CLIENT_ID) {
+        $("google-state").textContent = "Google sign-in is not configured on this deployment.";
+      }
+      return;
+    }
+    await new Promise((resolve, reject) => {
+      const existing = document.querySelector('script[data-nothing-google="1"]');
+      if (existing) {
+        existing.addEventListener("load", resolve, {once:true});
+        existing.addEventListener("error", reject, {once:true});
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = "https://accounts.google.com/gsi/client";
+      script.async = true;
+      script.defer = true;
+      script.dataset.nothingGoogle = "1";
+      script.onload = resolve;
+      script.onerror = () => reject(new Error("Google sign-in library could not be loaded."));
+      document.head.appendChild(script);
+    });
+    if (!window.google?.accounts?.id) throw new Error("Google Identity Services is unavailable.");
+    window.google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      callback: async (response) => {
+        try {
+          await authorizeWithGoogle(response.credential);
+        } catch (e) {
+          $("google-state").textContent = e.message;
+          officialStatus("Google authorization failed.");
+        }
+      },
+      auto_select: false,
+      cancel_on_tap_outside: true
+    });
+    $("google-signin-button").replaceChildren();
+    window.google.accounts.id.renderButton($("google-signin-button"), {
+      type: "standard",
+      theme: "outline",
+      size: "large",
+      text: "signin_with",
+      shape: "rectangular",
+      width: 320
+    });
+    googleInitialized = true;
+  }
+
+  async function ensureWalletForAuth() {
+    if (!WALLET_AUTH_ENABLED) throw new Error("Wallet sign-in is disabled on this deployment.");
+    if (!selectedProvider || !walletAddress) {
+      if (!providers.size) throw new Error("No compatible wallet was found.");
+      await connect([...providers.keys()][0], true);
+    }
+    if (!selectedProvider || !walletAddress) throw new Error("Connect a wallet first.");
+  }
+
+  async function authorizeWithWallet() {
+    if (!WALLET_AUTH_ENABLED) throw new Error("Wallet sign-in is disabled on this deployment.");
+    if (!domainChallenge?.challenge) throw new Error("Get the organization DNS challenge first.");
+    if (!(await verifyDomain())) throw new Error("Verify organization domain control first.");
+    await ensureWalletForAuth();
+    const challengeResponse = await apiJson("/v1/auth/wallet/challenge", {
+      method: "POST",
+      body: JSON.stringify({wallet_address: walletAddress})
+    });
+    const challenge = challengeResponse.data || challengeResponse;
+    const signature = await selectedProvider.request({
+      method: "personal_sign",
+      params: [challenge.message, walletAddress]
+    });
+    const response = await apiJson("/v1/organization/wallet-authorize", {
+      method: "POST",
+      body: JSON.stringify({
+        challenge_id: challenge.challenge_id,
+        message: challenge.message,
+        signature,
+        domain_challenge: domainChallenge.challenge,
+        requested_domain: requestedDomain(),
+        registration: readDraft()
+      })
+    });
+    const data = response.data || response;
+    officialAuthorizationChallengeId = data.challenge_id;
+    $("wallet-auth-state").textContent = "Wallet authentication accepted; authorization is bound to this registration.";
+    officialStatus("Official organization authorization completed with wallet + DNS control.", true);
+    if (WALLET_ENABLED && window.liveConfig?.enabled) await requestQuote(await selectedProvider.request({method:"eth_chainId"}));
+  }
+
+  async function authorizeWithGoogle(idToken) {
+    if (!IDENTITY_CONTROL_ENABLED || !GOOGLE_CLIENT_ID) throw new Error("Google official registration is not configured.");
+    if (!domainChallenge?.challenge) throw new Error("Get the organization DNS challenge first.");
+    if (!(await verifyDomain())) throw new Error("Verify organization domain control first.");
+    $("google-state").textContent = "Verifying Google Workspace identity…";
+    const response = await apiJson("/v1/organization/google-authorize", {
+      method: "POST",
+      body: JSON.stringify({
+        id_token: idToken,
+        domain_challenge: domainChallenge.challenge,
+        requested_domain: requestedDomain(),
+        registration: readDraft()
+      })
+    });
+    const data = response.data || response;
+    officialAuthorizationChallengeId = data.authorization_challenge_id;
+    $("google-state").textContent = "Google Workspace identity accepted; authorization is bound to this registration.";
+    officialStatus("Official organization authorization completed with Google Workspace + DNS control.", true);
+  }
+
+  async function setRegistrationMode() {
+    officialAuthorizationChallengeId = null;
+    domainChallenge = null;
+    $("official-box").hidden = !isOfficialMode();
+    if (!isOfficialMode()) return;
+    if (!IDENTITY_CONTROL_ENABLED) {
+      officialStatus("Official registration is disabled on this deployment.");
+      return;
+    }
+    const domains = lines($("domains").value);
+    if (!$("organizationDomain").value && domains[0]) $("organizationDomain").value = domains[0];
+    try { await loadGoogleSignIn(); } catch (e) { $("google-state").textContent = e.message; }
   }
 
   function readDraft() {
@@ -73,8 +256,8 @@
     });
   }
 
-  async function connect(key) {
-    if (!WALLET_ENABLED) throw new Error("Wallet connection is disabled on this deployment pending security review.");
+  async function connect(key, authOnly = false) {
+    if (!WALLET_ENABLED && !WALLET_AUTH_ENABLED) throw new Error("Wallet access is disabled on this deployment pending security review.");
     if (!window.isSecureContext && location.hostname !== "localhost") throw new Error("Wallet connection requires a secure HTTPS context.");
     const item = providers.get(key);
     if (!item) return;
@@ -84,7 +267,7 @@
     if (!walletAddress) throw new Error("Wallet returned no account.");
     const chainId = await selectedProvider.request({method:"eth_chainId"});
     $("wallet-state").textContent = walletLabel(item.info) + " · " + walletAddress + " · chain " + chainId;
-    if (window.liveConfig?.enabled) await requestQuote(chainId);
+    if (WALLET_ENABLED && window.liveConfig?.enabled && !authOnly) await requestQuote(chainId);
   }
 
   async function discoverWallets() {
@@ -198,7 +381,8 @@
         invoice_id: invoice.invoice_id,
         registration: readDraft(),
         wallet_address: walletAddress,
-        tx_hash: txHash
+        tx_hash: txHash,
+        ...(officialAuthorizationChallengeId ? {authorization_challenge_id: officialAuthorizationChallengeId} : {})
       })
     });
     const result = response.data || response;
@@ -227,7 +411,12 @@
     const id = identity.id || identity.nothing_id;
     $("result-id").textContent = id;
     $("result-name").textContent = identity.subject?.name || "—";
-    $("result-copy").textContent = "The identity is recorded as SELF-CLAIMED unless and until independent verification events are added.";
+    const official = Array.isArray(identity.claims) && identity.claims.some(
+      claim => claim?.authorization?.status === "CONFIRMED"
+    );
+    $("result-copy").textContent = official
+      ? "The record includes organization-control authorization evidence; legal/trademark status is not inferred beyond the documented evidence."
+      : "The identity is recorded as SELF-CLAIMED unless and until independent verification events are added.";
     $("result").hidden = false;
     const url = verifyUrl || new URL("./verify.html?id=" + encodeURIComponent(id), location.href).href;
     const svg = badgeSvg(id, identity.subject?.name || "", url);
@@ -255,8 +444,22 @@
     });
   }
 
+  $("registrationMode").addEventListener("change", async () => {
+    try { await setRegistrationMode(); } catch (e) { officialStatus(e.message); }
+  });
+  $("get-domain-challenge").addEventListener("click", async () => {
+    try { await getDomainChallenge(); } catch (e) { $("domain-state").textContent = e.message; }
+  });
+  $("verify-domain").addEventListener("click", async () => {
+    try { await verifyDomain(); } catch (e) { $("domain-state").textContent = e.message; }
+  });
+  $("wallet-auth").addEventListener("click", async () => {
+    try { await authorizeWithWallet(); } catch (e) { $("wallet-auth-state").textContent = e.message; }
+  });
+
   fillDraft(decodeDraft());
-  if (API_BASE && WALLET_ENABLED) {
+  setRegistrationMode().catch(() => {});
+  if (API_BASE && (WALLET_ENABLED || WALLET_AUTH_ENABLED)) {
     discoverWallets();
   } else {
     $("wallet-list").innerHTML =

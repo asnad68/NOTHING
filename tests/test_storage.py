@@ -171,6 +171,126 @@ class SQLiteNothingStoreTests(unittest.TestCase):
         reopened.close()
 
 
+    def test_wallet_auth_challenge_is_one_time_and_registration_bound(self):
+        store = self.make_store()
+        message_sha256 = "a" * 64
+        store.create_auth_challenge(
+            challenge_id="11111111-1111-1111-1111-111111111111",
+            purpose="wallet_siwe",
+            nonce="ABCDEF12345678",
+            wallet_address="0x1111111111111111111111111111111111111111",
+            domain="nothing.example",
+            uri="https://nothing.example/",
+            chain_id=1,
+            message_sha256=message_sha256,
+            issued_at="2026-10-02T20:00:00Z",
+            expires_at="2026-10-02T20:05:00Z",
+            recorded_at="2026-10-02T20:00:00Z",
+            actor="test",
+        )
+        challenge = store.get_auth_challenge("11111111-1111-1111-1111-111111111111")
+        self.assertEqual(challenge["authorization_status"], "PENDING")
+        authorization = {
+            "registration_digest": "b" * 64,
+            "domain": "nothing.example",
+            "authorization_method": "wallet_siwe+dns_txt",
+        }
+        self.assertTrue(
+            store.authorize_auth_challenge(
+                "11111111-1111-1111-1111-111111111111",
+                nonce=challenge["nonce"],
+                message_sha256=message_sha256,
+                authorization=authorization,
+                now="2026-10-02T20:01:00Z",
+                actor="test",
+            )
+        )
+        self.assertFalse(
+            store.authorize_auth_challenge(
+                "11111111-1111-1111-1111-111111111111",
+                nonce=challenge["nonce"],
+                message_sha256=message_sha256,
+                authorization=authorization,
+                now="2026-10-02T20:01:30Z",
+                actor="test",
+            )
+        )
+        self.assertTrue(
+            store.consume_auth_authorization(
+                "11111111-1111-1111-1111-111111111111",
+                registration_digest="b" * 64,
+                wallet_address="0x1111111111111111111111111111111111111111",
+                now="2026-10-02T20:02:00Z",
+                actor="test",
+            )
+        )
+        self.assertFalse(
+            store.consume_auth_authorization(
+                "11111111-1111-1111-1111-111111111111",
+                registration_digest="b" * 64,
+                wallet_address="0x1111111111111111111111111111111111111111",
+                now="2026-10-02T20:03:00Z",
+                actor="test",
+            )
+        )
+        store.close()
+
+    def test_google_authorization_is_one_time_and_not_wallet_bound(self):
+        store = self.make_store()
+        message_sha256 = "c" * 64
+        store.create_auth_challenge(
+            challenge_id="22222222-2222-2222-2222-222222222222",
+            purpose="google_oidc",
+            nonce="GOOGLE12345678",
+            wallet_address=None,
+            domain="apple.com",
+            uri="https://nothing.example/",
+            chain_id=1,
+            message_sha256=message_sha256,
+            issued_at="2026-10-02T20:00:00Z",
+            expires_at="2026-10-02T20:05:00Z",
+            recorded_at="2026-10-02T20:00:00Z",
+            actor="test",
+        )
+        challenge = store.get_auth_challenge("22222222-2222-2222-2222-222222222222")
+        authorization = {
+            "registration_digest": "d" * 64,
+            "brand_name": "Apple",
+            "domain": "apple.com",
+            "principal_method": "google_workspace",
+            "principal_id_sha256": "e" * 64,
+            "authorization_method": "google_oidc+dns_txt",
+        }
+        self.assertTrue(
+            store.authorize_google_challenge(
+                "22222222-2222-2222-2222-222222222222",
+                nonce=challenge["nonce"],
+                message_sha256=message_sha256,
+                authorization=authorization,
+                now="2026-10-02T20:01:00Z",
+                actor="test",
+            )
+        )
+        self.assertTrue(
+            store.consume_auth_authorization(
+                "22222222-2222-2222-2222-222222222222",
+                registration_digest="d" * 64,
+                wallet_address=None,
+                now="2026-10-02T20:02:00Z",
+                actor="test",
+            )
+        )
+        self.assertFalse(
+            store.consume_auth_authorization(
+                "22222222-2222-2222-2222-222222222222",
+                registration_digest="d" * 64,
+                wallet_address="0x9999999999999999999999999999999999999999",
+                now="2026-10-02T20:03:00Z",
+                actor="test",
+            )
+        )
+        store.close()
+
     def test_authenticated_ingestion_is_idempotent_and_persistent(self):
         store = self.make_store()
         procedure = self.load_fixture_bundle()["procedure"]
@@ -255,7 +375,7 @@ class SQLiteNothingStoreTests(unittest.TestCase):
             version = connection.execute(
                 "SELECT MAX(version) FROM schema_migrations"
             ).fetchone()[0]
-        self.assertEqual(version, 3)
+        self.assertEqual(version, 5)
 
 if __name__ == "__main__":
     unittest.main()
