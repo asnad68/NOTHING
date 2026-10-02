@@ -94,11 +94,17 @@ Where a legal entity and brand have different names, NOTHING should use an autho
 
 Payment must never be used as company-ownership evidence.
 
-The current paid enrollment gateway therefore creates a self-claimed identity after successful settlement. The official-organization gate is a separate authorization layer and must execute before any future commercial status is granted.
+The paid enrollment gateway keeps payment separate from organization authorization. A self-claimed enrollment may be paid and remain self-claimed. An official enrollment must carry a previously authorized, registration-bound organization-control challenge; that authorization is consumed once when the identity record is written.
+
+## One-time authorization
+
+Official registration authorizations are persisted server-side in PostgreSQL and SQLite reference storage. Wallet challenges use a server-issued SIWE nonce; Google authorizations store only a hash of the external token and the authorization decision, not the raw token.
+
+An authorization is bound to the registration digest and, for wallet authentication, to the challenged wallet. Final registration consumes the authorization once. Replaying the authentication or changing the registration data therefore cannot silently reuse the same authorization.
 
 ## Activation gates
 
-The public prototype currently keeps wallet access disabled by default.
+The public prototype currently keeps wallet access and official registration disabled by default.
 
 Before enabling official registration in production:
 
