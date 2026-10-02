@@ -213,12 +213,36 @@ class Handler(BaseHTTPRequestHandler):
         self._send(204, {})
 
     def do_GET(self) -> None:
-        path = urlparse(self.path).path.rstrip("/") or "/"
+        parsed = urlparse(self.path)
+        path = parsed.path.rstrip("/") or "/"
         if not self._limit():
             return
         if path == "/healthz":
             self._send(200, {"status": "ok", "enabled": ENABLED})
             return
+        if path == "/v1/organization/domain-challenge":
+            if len(DOMAIN_CHALLENGE_SECRET) < 32:
+                self._error(503, "DOMAIN_VERIFICATION_UNAVAILABLE", "Domain verification is not configured on this deployment.")
+                return
+            try:
+                values = parse_qs(parsed.query, keep_blank_values=False)
+                domain = normalize_domain(values.get("domain", [""])[0])
+                challenge = issue_domain_challenge_token(
+                    domain,
+                    DOMAIN_CHALLENGE_SECRET,
+                    ttl_seconds=DOMAIN_CHALLENGE_TTL_SECONDS,
+                )
+                self._send(200, {"data": {
+                    "domain": challenge.domain,
+                    "record_name": challenge.record_name,
+                    "record_type": "TXT",
+                    "record_value": challenge.record_value,
+                    "challenge_digest": challenge.challenge_digest,
+                }})
+            except IdentityControlError as exc:
+                self._error(400, "INVALID_DOMAIN", str(exc))
+            return
+
         if path == "/v1/enrollment/config":
             try:
                 _require_enabled()
