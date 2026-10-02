@@ -497,6 +497,57 @@ class Handler(BaseHTTPRequestHandler):
                 self._error(503, "IDENTITY_CONTROL_UNAVAILABLE", "The wallet authentication challenge could not be issued.")
             return
 
+        if path == "/v1/auth/google/challenge":
+            store = None
+            try:
+                _require_identity_control()
+                if not GOOGLE_CLIENT_ID:
+                    raise RuntimeError("Google authentication is not configured on this deployment")
+                payload = _safe_json(_read_body(self))
+                registration = RegistrationDraft.from_mapping(payload.get("registration", {}))
+                requested_domain = normalize_domain(payload.get("requested_domain", ""))
+                if requested_domain not in {normalize_domain(value) for value in registration.domains}:
+                    raise EnrollmentValidationError("requested_domain must be one of the submitted official domains")
+                public_origin, _ = _expected_public_origin()
+                issued = datetime.now(timezone.utc).replace(microsecond=0)
+                expires = issued + timedelta(seconds=WALLET_CHALLENGE_TTL_SECONDS)
+                nonce = secrets.token_urlsafe(32)
+                challenge_id = str(uuid.uuid4())
+                binding = f"google_oidc|{challenge_id}|{registration.digest()}|{nonce}"
+                message_sha256 = hashlib.sha256(binding.encode("utf-8")).hexdigest()
+                store = PostgreSQLNothingStore.from_environment()
+                store.create_auth_challenge(
+                    challenge_id=challenge_id,
+                    purpose="google_oidc",
+                    nonce=nonce,
+                    wallet_address=None,
+                    domain=requested_domain,
+                    uri=public_origin,
+                    chain_id=EVM_CHAIN_ID,
+                    message_sha256=message_sha256,
+                    issued_at=_iso_z(issued),
+                    expires_at=_iso_z(expires),
+                    actor=ACTOR,
+                )
+                self._send(200, {"data": {
+                    "challenge_id": challenge_id,
+                    "nonce": nonce,
+                    "expires_at": _iso_z(expires),
+                    "domain": requested_domain,
+                }})
+            except EnrollmentValidationError as exc:
+                self._error(400, "INVALID_REQUEST", str(exc))
+            except RuntimeError as exc:
+                self._error(503, "IDENTITY_CONTROL_UNAVAILABLE", str(exc))
+            except StoreError:
+                self._error(503, "IDENTITY_CONTROL_UNAVAILABLE", "Authentication challenge storage is unavailable.")
+            except Exception:
+                self._error(503, "IDENTITY_CONTROL_UNAVAILABLE", "The Google authentication challenge could not be issued.")
+            finally:
+                if store is not None:
+                    store.close()
+            return
+
         if path == "/v1/organization/google-authorize":
             store = None
             try:
@@ -510,12 +561,31 @@ class Handler(BaseHTTPRequestHandler):
                 requested_domain = normalize_domain(payload.get("requested_domain", ""))
                 if requested_domain not in {normalize_domain(value) for value in registration.domains}:
                     raise EnrollmentValidationError("requested_domain must be one of the submitted official domains")
-                if not id_token or not domain_token:
-                    raise EnrollmentValidationError("id_token and domain_challenge are required")
+                challenge_id = str(payload.get("google_challenge_id", "")).strip()
+                if not id_token or not domain_token or not challenge_id:
+                    raise EnrollmentValidationError("google_challenge_id, id_token and domain_challenge are required")
+                store = PostgreSQLNothingStore.from_environment()
+                challenge = store.get_auth_challenge(challenge_id)
+                if (
+                    challenge["purpose"] != "google_oidc"
+                    or challenge["authorization_status"] != "PENDING"
+                    or challenge["consumed_at"]
+                ):
+                    raise ConflictError("Google authentication challenge is not available")
+                now = datetime.now(timezone.utc)
+                expires = datetime.fromisoformat(str(challenge["expires_at"]).replace("Z", "+00:00"))
+                if expires <= now:
+                    raise ConflictError("Google authentication challenge has expired")
+                expected_binding = hashlib.sha256(
+                    f"google_oidc|{challenge['challenge_id']}|{registration.digest()}|{challenge['nonce']}".encode("utf-8")
+                ).hexdigest()
+                if expected_binding != str(challenge["message_sha256"]).lower():
+                    raise IdentityControlError("Google authentication challenge is not bound to this registration")
                 claims = verify_google_id_token(
                     id_token,
                     client_id=GOOGLE_CLIENT_ID,
                     expected_domain=requested_domain,
+                    expected_nonce=str(challenge["nonce"]),
                 )
                 principal = verify_google_workspace_principal(
                     subject=str(claims["sub"]),
@@ -544,17 +614,6 @@ class Handler(BaseHTTPRequestHandler):
                     }})
                     return
 
-                public_origin, _ = _expected_public_origin()
-                now = datetime.now(timezone.utc)
-                exp = int(claims["exp"])
-                token_expiry = datetime.fromtimestamp(exp, timezone.utc)
-                expires = min(now + timedelta(seconds=WALLET_CHALLENGE_TTL_SECONDS), token_expiry)
-                if expires <= now:
-                    raise ConflictError("Google ID token is expired")
-                challenge_id = str(uuid.uuid4())
-                nonce = secrets.token_hex(24)
-                binding = f"{claims['sub']}|{registration.digest()}|{nonce}"
-                message_hash = hashlib.sha256(binding.encode("utf-8")).hexdigest()
                 authorization = {
                     "registration_digest": registration.digest(),
                     "brand_name": registration.name,
@@ -566,36 +625,19 @@ class Handler(BaseHTTPRequestHandler):
                     "authorization_method": "google_oidc+dns_txt",
                     "authorized_at": _iso_z(now),
                 }
-                store = PostgreSQLNothingStore.from_environment()
-                try:
-                    store.create_auth_challenge(
-                        challenge_id=challenge_id,
-                        purpose="google_oidc",
-                        nonce=nonce,
-                        wallet_address=None,
-                        domain=requested_domain,
-                        uri=public_origin,
-                        chain_id=EVM_CHAIN_ID,
-                        message_sha256=message_hash,
-                        issued_at=_iso_z(now),
-                        expires_at=_iso_z(expires),
-                        actor=ACTOR,
-                    )
-                    saved = store.authorize_google_challenge(
-                        challenge_id,
-                        nonce=nonce,
-                        message_sha256=message_hash,
-                        authorization=authorization,
-                        now=_iso_z(now),
-                        actor=ACTOR,
-                    )
-                finally:
-                    store.close()
+                saved = store.authorize_google_challenge(
+                    challenge["challenge_id"],
+                    nonce=str(challenge["nonce"]),
+                    message_sha256=str(challenge["message_sha256"]),
+                    authorization=authorization,
+                    now=_iso_z(now),
+                    actor=ACTOR,
+                )
                 if not saved:
                     raise ConflictError("Google authorization could not be persisted")
                 self._send(200, {"data": {
                     "authorized": True,
-                    "authorization_challenge_id": challenge_id,
+                    "authorization_challenge_id": challenge["challenge_id"],
                     "decision": {
                         "state": decision.state,
                         "reason": decision.reason,
