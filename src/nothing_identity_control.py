@@ -18,6 +18,7 @@ to manual/authoritative review instead of being silently accepted.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import ipaddress
 import re
 import secrets
@@ -32,9 +33,20 @@ class IdentityControlError(ValueError):
     """Raised when an identity-control input is invalid."""
 
 
-DOMAIN_RE = re.compile(
-    r"^(?=.{1,253}\\.?$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z]{2,63}\\.?$"
-)
+def _is_valid_ascii_domain(value: str) -> bool:
+    if not 1 <= len(value) <= 253:
+        return False
+    labels = value.split(".")
+    if len(labels) < 2:
+        return False
+    for label in labels:
+        if not 1 <= len(label) <= 63:
+            return False
+        if label[0] == "-" or label[-1] == "-":
+            return False
+        if not re.fullmatch(r"[A-Za-z0-9-]+", label):
+            return False
+    return True
 NONCE_RE = re.compile(r"^[A-Za-z0-9]{8,}$")
 ETH_ADDRESS_RE = re.compile(r"^0x[a-fA-F0-9]{40}$")
 
@@ -82,7 +94,7 @@ def normalize_domain(value: str) -> str:
         ascii_domain = raw.encode("idna").decode("ascii")
     except UnicodeError as exc:
         raise IdentityControlError("domain is not valid IDNA") from exc
-    if not DOMAIN_RE.fullmatch(ascii_domain):
+    if not _is_valid_ascii_domain(ascii_domain):
         raise IdentityControlError("domain must be a public DNS hostname")
     try:
         ipaddress.ip_address(ascii_domain)
@@ -209,8 +221,10 @@ def build_siwe_message(
     domain = normalize_domain(domain)
     address = normalize_wallet_address(address)
     parsed = urlparse(uri)
-    if parsed.scheme != "https" or not parsed.netloc:
+    if parsed.scheme != "https" or not parsed.netloc or not parsed.hostname:
         raise IdentityControlError("SIWE URI must be HTTPS")
+    if normalize_domain(parsed.hostname) != domain:
+        raise IdentityControlError("SIWE URI host must match the SIWE domain")
     if not NONCE_RE.fullmatch(nonce):
         raise IdentityControlError("SIWE nonce must contain at least 8 alphanumeric characters")
     if not isinstance(chain_id, int) or chain_id <= 0:
@@ -334,7 +348,7 @@ def issue_domain_challenge_token(domain: str, secret: str, *, now: datetime | No
     expires = int(current.timestamp()) + ttl_seconds
     nonce = secrets.token_urlsafe(24)
     unsigned = f"v1|{domain}|{expires}|{nonce}"
-    signature = hashlib.sha256((secret + "|" + unsigned).encode("utf-8")).hexdigest()
+    signature = hmac.new(secret.encode("utf-8"), unsigned.encode("utf-8"), hashlib.sha256).hexdigest()
     token = f"{unsigned}|{signature}"
     return build_domain_challenge(domain, challenge=token)
 
@@ -363,7 +377,7 @@ def verify_domain_challenge_token(
     if expires <= int((now or datetime.now(timezone.utc)).timestamp()):
         return False
     unsigned = f"v1|{token_domain}|{expires}|{nonce}"
-    expected_signature = hashlib.sha256((secret + "|" + unsigned).encode("utf-8")).hexdigest()
+    expected_signature = hmac.new(secret.encode("utf-8"), unsigned.encode("utf-8"), hashlib.sha256).hexdigest()
     return secrets.compare_digest(provided_signature, expected_signature)
 
 
