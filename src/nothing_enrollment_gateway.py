@@ -366,6 +366,7 @@ class Handler(BaseHTTPRequestHandler):
                     "record_name": challenge.record_name,
                     "record_type": "TXT",
                     "record_value": challenge.record_value,
+                    "challenge": challenge.challenge,
                     "challenge_digest": challenge.challenge_digest,
                 }})
             except IdentityControlError as exc:
