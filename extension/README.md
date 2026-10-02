@@ -11,11 +11,13 @@ Cross-browser MV3 extension for the NOTHING business identity and verification p
 5. Connects a compatible EIP-1193/EIP-6963 wallet on the registration page.
 6. Opens public verification records by NOTHING ID.
 
+The public deployment keeps wallet connection disabled by default. A deployment must explicitly enable wallet access after security review.
+
 The extension is intentionally **not a wallet**. MetaMask, Trust Wallet or another compatible wallet remains the user's wallet. The extension never receives a seed phrase or private key.
 
 ## Paid enrollment
 
-The production flow is:
+The production flow, when explicitly enabled after deployment security review, is:
 
 registration draft -> server-issued invoice -> wallet transaction -> server-side chain verification -> Payment Core settlement -> NOTHING ID -> public Verify page.
 
