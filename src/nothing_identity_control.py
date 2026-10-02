@@ -386,6 +386,7 @@ def verify_google_id_token(
     *,
     client_id: str,
     expected_domain: str | None = None,
+    expected_nonce: str | None = None,
     jwks_client: Any | None = None,
 ) -> dict[str, Any]:
     """Verify a Google OpenID Connect ID token and return safe claims.
