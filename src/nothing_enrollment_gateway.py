@@ -17,7 +17,7 @@ import uuid
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from src.nothing_billing import ConfirmationPolicy, SubscriptionBillingService
 from src.nothing_chain_adapters import EvmJsonRpcAdapter
@@ -32,6 +32,14 @@ from src.nothing_enrollment import (
 from src.nothing_postgres import PostgreSQLNothingStore
 from src.nothing_payments import PaymentInvoice
 from src.nothing_store import ConflictError, NotFoundError, StoreError
+from src.nothing_identity_control import (
+    IdentityControlError,
+    build_domain_challenge,
+    issue_domain_challenge_token,
+    normalize_domain,
+    verify_domain_challenge_token,
+    verify_domain_txt,
+)
 
 HOST = os.getenv("NOTHING_ENROLLMENT_API_HOST", "127.0.0.1")
 PORT = int(os.getenv("NOTHING_ENROLLMENT_API_PORT", "8090"))
@@ -47,6 +55,8 @@ ALLOWED_ORIGIN = os.getenv("NOTHING_ENROLLMENT_ALLOWED_ORIGIN", "").strip()
 MAX_BODY = max(1024, int(os.getenv("NOTHING_ENROLLMENT_MAX_BODY_BYTES", "65536")))
 RATE_WINDOW = max(1, int(os.getenv("NOTHING_ENROLLMENT_RATE_WINDOW_SECONDS", "60")))
 RATE_MAX = max(1, int(os.getenv("NOTHING_ENROLLMENT_RATE_LIMIT_MAX_REQUESTS", "10")))
+DOMAIN_CHALLENGE_SECRET = os.getenv("NOTHING_DOMAIN_CHALLENGE_SECRET", "").strip()
+DOMAIN_CHALLENGE_TTL_SECONDS = max(300, min(86400, int(os.getenv("NOTHING_DOMAIN_CHALLENGE_TTL_SECONDS", "1800"))))
 
 
 class RateLimiter:
