@@ -77,3 +77,5 @@ jobs:
 
       - name: Build production payment worker image
         run: docker build --pull --file Dockerfile.worker --tag nothing-payment-worker:ci .
+      - name: Build production enrollment gateway image
+        run: docker build --pull --file Dockerfile.enrollment --tag nothing-enrollment-gateway:ci .
