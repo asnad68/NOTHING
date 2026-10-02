@@ -168,6 +168,18 @@ class NothingStore(Protocol):
     ) -> bool:
         ...
 
+    def reject_auth_challenge(
+        self,
+        challenge_id: str,
+        *,
+        nonce: str,
+        message_sha256: str,
+        decision: Mapping[str, Any],
+        now: str,
+        actor: str = "auth",
+    ) -> bool:
+        ...
+
 
 def _utc_now() -> str:
     return (
@@ -734,6 +746,64 @@ class SQLiteNothingStore:
                             actor,
                             challenge_id,
                             json.dumps({"authorization_status": "AUTHORIZED"}, separators=(",", ":")),
+                        ),
+                    )
+                connection.execute("COMMIT")
+                return changed
+            except Exception:
+                connection.execute("ROLLBACK")
+                raise
+
+    def reject_auth_challenge(
+        self,
+        challenge_id: str,
+        *,
+        nonce: str,
+        message_sha256: str,
+        decision: Mapping[str, Any],
+        now: str,
+        actor: str = "auth",
+    ) -> bool:
+        challenge_id = str(challenge_id or "").strip()
+        nonce = str(nonce or "").strip()
+        message_sha256 = str(message_sha256 or "").strip().lower()
+        actor = str(actor).strip()
+        now = str(now).strip()
+        if not challenge_id or not nonce or len(message_sha256) != 64 or not actor or not now:
+            raise ValueError("invalid authentication challenge rejection")
+        payload_json = _canonical_json(dict(decision))
+        with self._connect() as connection:
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                cursor = connection.execute(
+                    """
+                    UPDATE auth_challenges
+                    SET consumed_at = ?,
+                        authorization_status = 'REJECTED',
+                        authorization_json = ?
+                    WHERE challenge_id = ?
+                      AND purpose = 'wallet_siwe'
+                      AND nonce = ?
+                      AND message_sha256 = ?
+                      AND consumed_at IS NULL
+                      AND authorization_status = 'PENDING'
+                      AND expires_at > ?
+                    """,
+                    (now, payload_json, challenge_id, nonce, message_sha256, now),
+                )
+                changed = cursor.rowcount == 1
+                if changed:
+                    connection.execute(
+                        """
+                        INSERT INTO audit_log(
+                            recorded_at, actor, action, record_type, record_id, details_json
+                        ) VALUES (?, ?, 'REJECT', 'auth_challenge', ?, ?)
+                        """,
+                        (
+                            now,
+                            actor,
+                            challenge_id,
+                            json.dumps({"authorization_status": "REJECTED"}, separators=(",", ":")),
                         ),
                     )
                 connection.execute("COMMIT")
