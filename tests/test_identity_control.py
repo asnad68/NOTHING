@@ -97,6 +97,21 @@ class IdentityControlTests(unittest.TestCase):
         self.assertTrue(decision.allowed)
         self.assertEqual(decision.state, "ORGANIZATION_CONTROLLED")
 
+    def test_lookalike_multilabel_domain_requires_review(self):
+        principal = wallet_principal(
+            subject="wallet-subject-lookalike",
+            address="0x4444444444444444444444444444444444444444",
+        )
+        decision = evaluate_official_claim(
+            brand_name="Apple",
+            requested_domain="apple.evil.example",
+            domain_controlled=True,
+            principal=principal,
+            website_url="https://apple.evil.example",
+        )
+        self.assertFalse(decision.allowed)
+        self.assertEqual(decision.state, "REQUIRES_AUTHORITATIVE_REVIEW")
+
     def test_website_outside_domain_rejected(self):
         principal = wallet_principal(
             subject="wallet-subject-3",
