@@ -37,6 +37,8 @@ from src.nothing_payments import PaymentInvoice
 from src.nothing_store import ConflictError, NotFoundError, StoreError
 from src.nothing_identity_control import (
     IdentityControlError,
+    verify_google_id_token,
+    verify_google_workspace_principal,
     build_domain_challenge,
     build_siwe_message,
     domain_from_url,
@@ -68,6 +70,7 @@ IDENTITY_CONTROL_ENABLED = os.getenv("NOTHING_IDENTITY_CONTROL_ENABLED", "false"
 WALLET_AUTH_ENABLED = os.getenv("NOTHING_WALLET_AUTH_ENABLED", "false").lower() in {"1", "true", "yes"}
 WALLET_CHALLENGE_TTL_SECONDS = max(120, min(900, int(os.getenv("NOTHING_WALLET_CHALLENGE_TTL_SECONDS", "300"))))
 PUBLIC_SITE_ORIGIN = os.getenv("NOTHING_PUBLIC_SITE_ORIGIN", "").strip().rstrip("/")
+GOOGLE_CLIENT_ID = os.getenv("NOTHING_GOOGLE_CLIENT_ID", "").strip()
 OFFICIAL_REGISTRATION_REQUIRED = os.getenv("NOTHING_OFFICIAL_REGISTRATION_REQUIRED", "false").lower() in {"1", "true", "yes"}
 
 
@@ -201,8 +204,11 @@ def _registration_authorization(
         raise ConflictError("official registration authorization is not active")
     if challenge["registration_consumed_at"]:
         raise ConflictError("official registration authorization has already been used")
-    if str(challenge["wallet_address"] or "").lower() != wallet.lower():
-        raise ConflictError("official registration authorization is bound to another wallet")
+    purpose = str(challenge["purpose"])
+    if purpose == "wallet_siwe" and str(challenge["wallet_address"] or "").lower() != wallet.lower():
+        raise ConflictError("official wallet authorization is bound to another wallet")
+    if purpose not in {"wallet_siwe", "google_oidc"}:
+        raise ConflictError("official registration authorization uses an unsupported method")
     if datetime.fromisoformat(str(challenge["expires_at"]).replace("Z", "+00:00")) <= datetime.now(timezone.utc):
         raise ConflictError("official registration authorization has expired")
     authorization = challenge.get("authorization") or {}
@@ -452,6 +458,130 @@ class Handler(BaseHTTPRequestHandler):
                 self._error(503, "IDENTITY_CONTROL_UNAVAILABLE", "Authentication challenge storage is unavailable.")
             except Exception:
                 self._error(503, "IDENTITY_CONTROL_UNAVAILABLE", "The wallet authentication challenge could not be issued.")
+            return
+
+        if path == "/v1/organization/google-authorize":
+            store = None
+            try:
+                _require_identity_control()
+                if not GOOGLE_CLIENT_ID:
+                    raise RuntimeError("Google authentication is not configured on this deployment")
+                payload = _safe_json(_read_body(self))
+                id_token = str(payload.get("id_token", "")).strip()
+                domain_token = str(payload.get("domain_challenge", "")).strip()
+                registration = RegistrationDraft.from_mapping(payload.get("registration", {}))
+                requested_domain = normalize_domain(payload.get("requested_domain", ""))
+                if requested_domain not in {normalize_domain(value) for value in registration.domains}:
+                    raise EnrollmentValidationError("requested_domain must be one of the submitted official domains")
+                if not id_token or not domain_token:
+                    raise EnrollmentValidationError("id_token and domain_challenge are required")
+                claims = verify_google_id_token(
+                    id_token,
+                    client_id=GOOGLE_CLIENT_ID,
+                    expected_domain=requested_domain,
+                )
+                principal = verify_google_workspace_principal(
+                    subject=str(claims["sub"]),
+                    email=str(claims["email"]),
+                    email_verified=bool(claims["email_verified"]),
+                    hosted_domain=claims.get("hosted_domain"),
+                    expected_domain=requested_domain,
+                )
+                controlled = _verify_domain_control(requested_domain, domain_token)
+                decision = evaluate_official_claim(
+                    brand_name=registration.name,
+                    requested_domain=requested_domain,
+                    domain_controlled=controlled,
+                    principal=principal,
+                    website_url=registration.website or None,
+                )
+                if not decision.allowed:
+                    self._send(403, {"data": {
+                        "authorized": False,
+                        "decision": {
+                            "state": decision.state,
+                            "reason": decision.reason,
+                            "domain": decision.domain,
+                            "authentication_method": decision.authentication_method,
+                        },
+                    }})
+                    return
+
+                public_origin, _ = _expected_public_origin()
+                now = datetime.now(timezone.utc)
+                exp = int(claims["exp"])
+                token_expiry = datetime.fromtimestamp(exp, timezone.utc)
+                expires = min(now + timedelta(seconds=WALLET_CHALLENGE_TTL_SECONDS), token_expiry)
+                if expires <= now:
+                    raise ConflictError("Google ID token is expired")
+                challenge_id = str(uuid.uuid4())
+                nonce = secrets.token_hex(24)
+                binding = f"{claims['sub']}|{registration.digest()}|{nonce}"
+                message_hash = hashlib.sha256(binding.encode("utf-8")).hexdigest()
+                authorization = {
+                    "registration_digest": registration.digest(),
+                    "brand_name": registration.name,
+                    "domain": requested_domain,
+                    "website": registration.website,
+                    "decision_state": decision.state,
+                    "principal_method": principal.method,
+                    "principal_id_sha256": _hash_identifier(principal.subject),
+                    "authorization_method": "google_oidc+dns_txt",
+                    "authorized_at": _iso_z(now),
+                }
+                store = PostgreSQLNothingStore.from_environment()
+                try:
+                    store.create_auth_challenge(
+                        challenge_id=challenge_id,
+                        purpose="google_oidc",
+                        nonce=nonce,
+                        wallet_address=None,
+                        domain=requested_domain,
+                        uri=public_origin,
+                        chain_id=EVM_CHAIN_ID,
+                        message_sha256=message_hash,
+                        issued_at=_iso_z(now),
+                        expires_at=_iso_z(expires),
+                        actor=ACTOR,
+                    )
+                    saved = store.authorize_google_challenge(
+                        challenge_id,
+                        nonce=nonce,
+                        message_sha256=message_hash,
+                        authorization=authorization,
+                        now=_iso_z(now),
+                        actor=ACTOR,
+                    )
+                finally:
+                    store.close()
+                if not saved:
+                    raise ConflictError("Google authorization could not be persisted")
+                self._send(200, {"data": {
+                    "authorized": True,
+                    "authorization_challenge_id": challenge_id,
+                    "decision": {
+                        "state": decision.state,
+                        "reason": decision.reason,
+                        "domain": decision.domain,
+                        "authentication_method": decision.authentication_method,
+                    },
+                    "expires_at": _iso_z(expires),
+                }})
+            except IdentityControlError as exc:
+                self._error(400, "IDENTITY_AUTHENTICATION_FAILED", str(exc))
+            except EnrollmentValidationError as exc:
+                self._error(400, "INVALID_REQUEST", str(exc))
+            except (ConflictError, NotFoundError) as exc:
+                self._error(409 if isinstance(exc, ConflictError) else 404, "IDENTITY_AUTHORIZATION_FAILED", str(exc))
+            except RuntimeError as exc:
+                self._error(503, "IDENTITY_CONTROL_UNAVAILABLE", str(exc))
+            except StoreError:
+                self._error(503, "IDENTITY_CONTROL_UNAVAILABLE", "Identity authorization storage is unavailable.")
+            except Exception:
+                self._error(503, "IDENTITY_CONTROL_UNAVAILABLE", "The Google organization authorization could not be completed.")
+            finally:
+                if store is not None:
+                    store.close()
             return
 
         if path == "/v1/organization/wallet-authorize":
