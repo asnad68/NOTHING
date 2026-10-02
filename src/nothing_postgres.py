@@ -52,7 +52,7 @@ from src.nothing_verify import (
     validate_verification_event,
 )
 
-STORAGE_SCHEMA_VERSION = 16
+STORAGE_SCHEMA_VERSION = 17
 DEFAULT_POOL_MIN_SIZE = 2
 DEFAULT_POOL_MAX_SIZE = 10
 DEFAULT_POOL_TIMEOUT_SECONDS = 10
@@ -472,6 +472,56 @@ class PostgreSQLNothingStore:
                             actor,
                             challenge_id,
                             json.dumps({"authorization_status": "REJECTED"}, separators=(",", ":")),
+                        ),
+                    )
+                return changed
+
+    @_translate_database_errors
+    def consume_auth_authorization(
+        self,
+        challenge_id: str,
+        *,
+        registration_digest: str,
+        wallet_address: str,
+        now: str,
+        actor: str = "auth",
+    ) -> bool:
+        challenge_id = str(challenge_id or "").strip()
+        registration_digest = str(registration_digest or "").strip().lower()
+        wallet_address = str(wallet_address or "").strip().lower()
+        now = str(now).strip()
+        actor = str(actor).strip()
+        if not challenge_id or len(registration_digest) != 64 or not wallet_address or not now or not actor:
+            raise ValueError("invalid authentication authorization consumption")
+        with self._pool.connection() as connection:
+            with connection.transaction():
+                row = connection.execute(
+                    """
+                    UPDATE auth_challenges
+                    SET registration_consumed_at = %s::timestamptz
+                    WHERE challenge_id = %s
+                      AND authorization_status = 'AUTHORIZED'
+                      AND registration_consumed_at IS NULL
+                      AND wallet_address = %s
+                      AND expires_at > %s::timestamptz
+                      AND COALESCE(authorization_json->>'registration_digest', '') = %s
+                    RETURNING challenge_id
+                    """,
+                    (now, challenge_id, wallet_address, now, registration_digest),
+                ).fetchone()
+                changed = row is not None
+                if changed:
+                    connection.execute(
+                        """
+                        INSERT INTO audit_log(
+                            recorded_at, actor, action, record_type, record_id, details_json
+                        ) VALUES (%s::timestamptz, %s, 'CONSUME', 'auth_challenge', %s, %s)
+                        """,
+                        (
+                            now,
+                            actor,
+                            challenge_id,
+                            json.dumps({"registration_consumed": True}, separators=(",", ":")),
                         ),
                     )
                 return changed
