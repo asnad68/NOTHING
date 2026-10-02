@@ -422,6 +422,61 @@ class PostgreSQLNothingStore:
                 return changed
 
     @_translate_database_errors
+    def reject_auth_challenge(
+        self,
+        challenge_id: str,
+        *,
+        nonce: str,
+        message_sha256: str,
+        decision: Mapping[str, Any],
+        now: str,
+        actor: str = "auth",
+    ) -> bool:
+        challenge_id = str(challenge_id or "").strip()
+        nonce = str(nonce or "").strip()
+        message_sha256 = str(message_sha256 or "").strip().lower()
+        actor = str(actor).strip()
+        now = str(now).strip()
+        if not challenge_id or not nonce or len(message_sha256) != 64 or not actor or not now:
+            raise ValueError("invalid authentication challenge rejection")
+        payload_json = _canonical_json(dict(decision))
+        with self._pool.connection() as connection:
+            with connection.transaction():
+                row = connection.execute(
+                    """
+                    UPDATE auth_challenges
+                    SET consumed_at = %s::timestamptz,
+                        authorization_status = 'REJECTED',
+                        authorization_json = %s::jsonb
+                    WHERE challenge_id = %s
+                      AND purpose = 'wallet_siwe'
+                      AND nonce = %s
+                      AND message_sha256 = %s
+                      AND consumed_at IS NULL
+                      AND authorization_status = 'PENDING'
+                      AND expires_at > %s::timestamptz
+                    RETURNING challenge_id
+                    """,
+                    (now, payload_json, challenge_id, nonce, message_sha256, now),
+                ).fetchone()
+                changed = row is not None
+                if changed:
+                    connection.execute(
+                        """
+                        INSERT INTO audit_log(
+                            recorded_at, actor, action, record_type, record_id, details_json
+                        ) VALUES (%s::timestamptz, %s, 'REJECT', 'auth_challenge', %s, %s)
+                        """,
+                        (
+                            now,
+                            actor,
+                            challenge_id,
+                            json.dumps({"authorization_status": "REJECTED"}, separators=(",", ":")),
+                        ),
+                    )
+                return changed
+
+    @_translate_database_errors
     def get_payment_worker_checkpoint(
         self,
         worker_name: str,
