@@ -280,14 +280,6 @@ def _public_identity(
                 sort_keys=True,
                 separators=(",", ":"),
             ).encode("utf-8")
-            stored = store.ingest_bundle(
-                bundle,
-                actor=ACTOR,
-                idempotency_key=f"enrollment:{invoice_id}",
-                request_sha256=hashlib.sha256(raw).hexdigest(),
-                ingestion_id=str(uuid.uuid4()),
-            )
-            consumed = True
             if official:
                 consumed = store.consume_auth_authorization(
                     str(authorization_challenge_id),
@@ -296,8 +288,15 @@ def _public_identity(
                     now=_iso_z(datetime.now(timezone.utc)),
                     actor=ACTOR,
                 )
-            if not consumed:
-                raise ConflictError("official registration authorization could not be consumed")
+                if not consumed:
+                    raise ConflictError("official registration authorization could not be consumed")
+            stored = store.ingest_bundle(
+                bundle,
+                actor=ACTOR,
+                idempotency_key=f"enrollment:{invoice_id}",
+                request_sha256=hashlib.sha256(raw).hexdigest(),
+                ingestion_id=str(uuid.uuid4()),
+            )
             if getattr(stored, "replayed", False):
                 return identity
             return identity
