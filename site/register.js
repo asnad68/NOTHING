@@ -13,6 +13,7 @@
   let domainChallenge = null;
   let officialAuthorizationChallengeId = null;
   let googleInitialized = false;
+  let googleChallenge = null;
 
   const htmlEscape = (v) => String(v ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;");
   const xmlEscape = (v) => htmlEscape(v);
@@ -83,12 +84,23 @@
   }
 
   async function loadGoogleSignIn() {
-    if (googleInitialized || !IDENTITY_CONTROL_ENABLED || !GOOGLE_CLIENT_ID) {
+    if (!IDENTITY_CONTROL_ENABLED || !GOOGLE_CLIENT_ID) {
       if (IDENTITY_CONTROL_ENABLED && !GOOGLE_CLIENT_ID) {
         $("google-state").textContent = "Google sign-in is not configured on this deployment.";
       }
       return;
     }
+    if (googleInitialized && googleChallenge) return;
+
+    const domain = requestedDomain();
+    const challengeResponse = await apiJson("/v1/auth/google/challenge", {
+      method: "POST",
+      body: JSON.stringify({
+        requested_domain: domain,
+        registration: readDraft()
+      })
+    });
+    googleChallenge = challengeResponse.data || challengeResponse;
     await new Promise((resolve, reject) => {
       const existing = document.querySelector('script[data-nothing-google="1"]');
       if (existing) {
@@ -108,6 +120,8 @@
     if (!window.google?.accounts?.id) throw new Error("Google Identity Services is unavailable.");
     window.google.accounts.id.initialize({
       client_id: GOOGLE_CLIENT_ID,
+      nonce: googleChallenge.nonce,
+      hd: requestedDomain(),
       callback: async (response) => {
         try {
           await authorizeWithGoogle(response.credential);
@@ -177,9 +191,11 @@
     if (!domainChallenge?.challenge) throw new Error("Get the organization DNS challenge first.");
     if (!(await verifyDomain())) throw new Error("Verify organization domain control first.");
     $("google-state").textContent = "Verifying Google Workspace identity…";
+    if (!googleChallenge?.challenge_id) throw new Error("Google authentication challenge is not ready. Please reopen official registration.");
     const response = await apiJson("/v1/organization/google-authorize", {
       method: "POST",
       body: JSON.stringify({
+        google_challenge_id: googleChallenge.challenge_id,
         id_token: idToken,
         domain_challenge: domainChallenge.challenge,
         requested_domain: requestedDomain(),
@@ -190,6 +206,18 @@
     officialAuthorizationChallengeId = data.authorization_challenge_id;
     $("google-state").textContent = "Google Workspace identity accepted; authorization is bound to this registration.";
     officialStatus("Official organization authorization completed with Google Workspace + DNS control.", true);
+  }
+
+  function resetGoogleChallenge() {
+    googleChallenge = null;
+    googleInitialized = false;
+    $("google-signin-button").replaceChildren();
+    $("google-state").textContent = "Registration details changed. Google authorization must be initialized again.";
+    if (isOfficialMode() && IDENTITY_CONTROL_ENABLED && GOOGLE_CLIENT_ID) {
+      loadGoogleSignIn().catch((e) => {
+        $("google-state").textContent = e.message;
+      });
+    }
   }
 
   async function setRegistrationMode() {
@@ -443,6 +471,11 @@
       subject: {name: d.name, type: d.type}
     });
   }
+
+  ["name", "website", "domains", "organizationDomain"].forEach((id) => {
+    const element = $(id);
+    if (element) element.addEventListener("change", resetGoogleChallenge);
+  });
 
   $("registrationMode").addEventListener("change", async () => {
     try { await setRegistrationMode(); } catch (e) { officialStatus(e.message); }
