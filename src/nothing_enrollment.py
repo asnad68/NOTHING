@@ -142,6 +142,66 @@ def _numeric_candidate(digest: str, offset: int = 0) -> str:
     return f"NTH-{number:06d}"
 
 
+def build_organization_controlled_identity(
+    draft: RegistrationDraft,
+    nothing_id: str,
+    *,
+    authorization_method: str,
+    controlled_domain: str,
+    now: datetime | None = None,
+) -> dict:
+    if not NOTHING_ID_RE.fullmatch(nothing_id):
+        raise EnrollmentValidationError("invalid Nothing ID")
+    controlled_domain = controlled_domain.strip().lower().rstrip(".")
+    if not controlled_domain or "." not in controlled_domain:
+        raise EnrollmentValidationError("invalid controlled organization domain")
+    now = now or datetime.now(timezone.utc)
+    checked_at = now.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    digest = draft.digest()
+    claims = []
+
+    statements = [
+        (
+            f"The registrant demonstrated control of the organization domain "
+            f"'{controlled_domain}' and authenticated a principal bound to that domain."
+        ),
+        f"The organization-controlled record identifies the business/brand name '{draft.name}'.",
+    ]
+    if draft.website:
+        statements.append(f"The registrant submitted the organization website {draft.website}.")
+    for index, statement in enumerate(statements):
+        source_reference = draft.website or f"https://{controlled_domain}/"
+        claims.append(
+            {
+                "claim_id": claim_id_for(digest, index),
+                "statement": statement,
+                "status": "SOURCE-VERIFIED",
+                "source": {
+                    "type": "official_website",
+                    "reference": source_reference,
+                    "checked_at": checked_at,
+                },
+                "authorization": {
+                    "status": "CONFIRMED",
+                    "method": authorization_method,
+                },
+                "valid_from": checked_at,
+            }
+        )
+
+    return {
+        "nothing_id": nothing_id,
+        "version": "0.1",
+        "subject": {
+            "name": draft.name,
+            "type": draft.type,
+            **({"website": draft.website} if draft.website else {}),
+        },
+        "claims": claims,
+        "revocation": {"status": "NOT_REVOKED"},
+    }
+
+
 def candidate_nothing_ids(draft_digest: str, limit: int = 64) -> list[str]:
     if not re.fullmatch(r"[0-9a-f]{64}", draft_digest):
         raise EnrollmentValidationError(
