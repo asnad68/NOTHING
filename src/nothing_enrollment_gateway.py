@@ -275,6 +275,47 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path.rstrip("/") or "/"
         if not self._limit():
             return
+        if path == "/v1/organization/domain-verify":
+            try:
+                payload = _safe_json(_read_body(self))
+                domain = normalize_domain(payload.get("domain", ""))
+                token = str(payload.get("challenge", "")).strip()
+                if len(DOMAIN_CHALLENGE_SECRET) < 32:
+                    self._error(503, "DOMAIN_VERIFICATION_UNAVAILABLE", "Domain verification is not configured on this deployment.")
+                    return
+                if not verify_domain_challenge_token(token, domain, DOMAIN_CHALLENGE_SECRET):
+                    self._send(400, {"data": {
+                        "domain_controlled": False,
+                        "reason": "The domain challenge is invalid or expired.",
+                        "domain": domain,
+                    }})
+                    return
+                challenge = build_domain_challenge(domain, challenge=token)
+                try:
+                    import dns.resolver
+                except ImportError:
+                    raise RuntimeError("dnspython is required for DNS domain verification")
+                resolver = dns.resolver.Resolver(configure=True)
+                resolver.timeout = 5.0
+                resolver.lifetime = 5.0
+                controlled = verify_domain_txt(challenge, resolver)
+                self._send(200, {"data": {
+                    "domain_controlled": controlled,
+                    "domain": domain,
+                    "record_name": challenge.record_name,
+                    "method": "dns_txt",
+                    "challenge_digest": challenge.challenge_digest,
+                }})
+            except IdentityControlError as exc:
+                self._error(400, "INVALID_DOMAIN", str(exc))
+            except EnrollmentValidationError as exc:
+                self._error(400, "INVALID_REQUEST", str(exc))
+            except RuntimeError as exc:
+                self._error(503, "DOMAIN_VERIFICATION_UNAVAILABLE", str(exc))
+            except Exception:
+                self._error(503, "DOMAIN_VERIFICATION_UNAVAILABLE", "The domain verification service could not complete the DNS check.")
+            return
+
         if path not in {"/v1/enrollment/quote", "/v1/enrollment/complete"}:
             self._error(404, "NOT_FOUND", "Enrollment endpoint does not exist.")
             return
