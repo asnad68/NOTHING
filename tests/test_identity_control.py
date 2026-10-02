@@ -139,6 +139,87 @@ class IdentityControlTests(unittest.TestCase):
         expired = now + timedelta(seconds=1801)
         self.assertFalse(verify_domain_challenge_token(challenge.challenge, "apple.com", "x" * 40, now=expired))
 
+    def test_google_id_token_signature_and_audience(self):
+        import jwt
+        from datetime import datetime, timedelta, timezone
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+
+        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        private_pem = private_key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+        public_pem = private_key.public_key().public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+
+        class FakeSigningKey:
+            key = public_pem
+
+        class FakeJwks:
+            def get_signing_key_from_jwt(self, token):
+                return FakeSigningKey()
+
+        now = datetime.now(timezone.utc)
+        token = jwt.encode(
+            {
+                "iss": "https://accounts.google.com",
+                "sub": "google-security-test",
+                "aud": "client-test",
+                "iat": int(now.timestamp()),
+                "exp": int((now + timedelta(minutes=5)).timestamp()),
+                "email": "admin@apple.com",
+                "email_verified": True,
+                "hd": "apple.com",
+            },
+            private_pem,
+            algorithm="RS256",
+            headers={"kid": "test"},
+        )
+        claims = __import__("src.nothing_identity_control", fromlist=["verify_google_id_token"]).verify_google_id_token(
+            token,
+            client_id="client-test",
+            expected_domain="apple.com",
+            jwks_client=FakeJwks(),
+        )
+        self.assertEqual(claims["email_domain"], "apple.com")
+        self.assertEqual(claims["hosted_domain"], "apple.com")
+
+        tampered = token[:-1] + ("a" if token[-1] != "a" else "b")
+        with self.assertRaises(IdentityControlError):
+            __import__("src.nothing_identity_control", fromlist=["verify_google_id_token"]).verify_google_id_token(
+                tampered,
+                client_id="client-test",
+                expected_domain="apple.com",
+                jwks_client=FakeJwks(),
+            )
+
+        personal = jwt.encode(
+            {
+                "iss": "https://accounts.google.com",
+                "sub": "google-personal-test",
+                "aud": "client-test",
+                "iat": int(now.timestamp()),
+                "exp": int((now + timedelta(minutes=5)).timestamp()),
+                "email": "someone@gmail.com",
+                "email_verified": True,
+                "hd": None,
+            },
+            private_pem,
+            algorithm="RS256",
+            headers={"kid": "test"},
+        )
+        with self.assertRaises(IdentityControlError):
+            __import__("src.nothing_identity_control", fromlist=["verify_google_id_token"]).verify_google_id_token(
+                personal,
+                client_id="client-test",
+                expected_domain="apple.com",
+                jwks_client=FakeJwks(),
+            )
+
     def test_idn_domain_normalizes_to_ascii(self):
         self.assertEqual(normalize_domain("münich.example"), "xn--mnich-kva.example")
 
