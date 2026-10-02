@@ -160,25 +160,52 @@ def build_organization_controlled_identity(
     digest = draft.digest()
     claims = []
 
-    statements = [
-        (
-            f"The registrant demonstrated control of the organization domain "
-            f"'{controlled_domain}' and authenticated a principal bound to that domain."
-        ),
-        f"The organization-controlled record identifies the business/brand name '{draft.name}'.",
-    ]
+    claims.append(
+        {
+            "claim_id": claim_id_for(digest, 0),
+            "statement": (
+                f"The registrant demonstrated control of the organization domain "
+                f"'{controlled_domain}' and authenticated a principal bound to that domain."
+            ),
+            "status": "SOURCE-VERIFIED",
+            "source": {
+                "type": "domain_control",
+                "reference": f"_nothing-challenge.{controlled_domain} (DNS TXT)",
+                "checked_at": checked_at,
+            },
+            "authorization": {
+                "status": "CONFIRMED",
+                "method": authorization_method,
+            },
+            "valid_from": checked_at,
+        }
+    )
+    claims.append(
+        {
+            "claim_id": claim_id_for(digest, 1),
+            "statement": f"The organization-controlled record identifies the business/brand name '{draft.name}'.",
+            "status": "SOURCE-VERIFIED",
+            "source": {
+                "type": "official_website" if draft.website else "domain_control",
+                "reference": draft.website or f"_nothing-challenge.{controlled_domain} (DNS TXT)",
+                "checked_at": checked_at,
+            },
+                "authorization": {
+                    "status": "CONFIRMED",
+                    "method": authorization_method,
+                },
+            "valid_from": checked_at,
+        }
+    )
     if draft.website:
-        statements.append(f"The registrant submitted the organization website {draft.website}.")
-    for index, statement in enumerate(statements):
-        source_reference = draft.website or f"https://{controlled_domain}/"
         claims.append(
             {
-                "claim_id": claim_id_for(digest, index),
-                "statement": statement,
+                "claim_id": claim_id_for(digest, 2),
+                "statement": f"The registrant submitted the organization website {draft.website}.",
                 "status": "SOURCE-VERIFIED",
                 "source": {
                     "type": "official_website",
-                    "reference": source_reference,
+                    "reference": draft.website,
                     "checked_at": checked_at,
                 },
                 "authorization": {
