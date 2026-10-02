@@ -189,6 +189,7 @@ class IdentityControlTests(unittest.TestCase):
                 "email": "admin@apple.com",
                 "email_verified": True,
                 "hd": "apple.com",
+                "nonce": "google-nonce-test",
             },
             private_pem,
             algorithm="RS256",
@@ -198,10 +199,36 @@ class IdentityControlTests(unittest.TestCase):
             token,
             client_id="client-test",
             expected_domain="apple.com",
+            expected_nonce="google-nonce-test",
             jwks_client=FakeJwks(),
         )
         self.assertEqual(claims["email_domain"], "apple.com")
         self.assertEqual(claims["hosted_domain"], "apple.com")
+
+        wrong_nonce = jwt.encode(
+            {
+                "iss": "https://accounts.google.com",
+                "sub": "google-security-test",
+                "aud": "client-test",
+                "iat": int(now.timestamp()),
+                "exp": int((now + timedelta(minutes=5)).timestamp()),
+                "email": "admin@apple.com",
+                "email_verified": True,
+                "hd": "apple.com",
+                "nonce": "different-nonce",
+            },
+            private_pem,
+            algorithm="RS256",
+            headers={"kid": "test"},
+        )
+        with self.assertRaises(IdentityControlError):
+            __import__("src.nothing_identity_control", fromlist=["verify_google_id_token"]).verify_google_id_token(
+                wrong_nonce,
+                client_id="client-test",
+                expected_domain="apple.com",
+                expected_nonce="google-nonce-test",
+                jwks_client=FakeJwks(),
+            )
 
         tampered = token[:-1] + ("a" if token[-1] != "a" else "b")
         with self.assertRaises(IdentityControlError):
