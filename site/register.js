@@ -1,6 +1,7 @@
 (() => {
   "use strict";
   const API_BASE = String(window.NOTHING_ENROLLMENT_API_BASE || window.NOTHING_API_BASE || "").replace(/\/$/, "");
+  const WALLET_ENABLED = window.NOTHING_WALLET_ENABLED === true;
   const $ = (id) => document.getElementById(id);
   const providers = new Map();
   let selectedProvider = null;
@@ -73,6 +74,8 @@
   }
 
   async function connect(key) {
+    if (!WALLET_ENABLED) throw new Error("Wallet connection is disabled on this deployment pending security review.");
+    if (!window.isSecureContext && location.hostname !== "localhost") throw new Error("Wallet connection requires a secure HTTPS context.");
     const item = providers.get(key);
     if (!item) return;
     selectedProvider = item.provider;
@@ -117,8 +120,8 @@
   }
 
   async function loadConfig() {
-    if (!API_BASE) {
-      $("registration-state").textContent = "PAYMENT GATED";
+    if (!API_BASE || !WALLET_ENABLED) {
+      $("registration-state").textContent = WALLET_ENABLED ? "PAYMENT GATED" : "WALLET DISABLED";
       $("registration-state").className = "status status-neutral";
       return;
     }
@@ -170,8 +173,11 @@
   };
 
   async function pay() {
+    if (!WALLET_ENABLED) throw new Error("Wallet payments are disabled on this deployment.");
     if (!selectedProvider || !walletAddress) throw new Error("Connect a wallet first.");
     if (!invoice) throw new Error("Request an invoice first.");
+    if (!/^0x[0-9a-fA-F]{40}$/.test(String(invoice.recipient || ""))) throw new Error("The server returned an invalid payment recipient.");
+    if (!/^0x[0-9a-fA-F]+$/.test(String(invoice.chain_id || ""))) throw new Error("The server returned an invalid chain identifier.");
     const chainId = await selectedProvider.request({method:"eth_chainId"});
     if (String(chainId).toLowerCase() !== String(invoice.chain_id).toLowerCase()) {
       throw new Error("Switch the wallet to " + invoice.chain_id + " and try again.");
@@ -250,12 +256,12 @@
   }
 
   fillDraft(decodeDraft());
-  if (API_BASE) {
+  if (API_BASE && WALLET_ENABLED) {
     discoverWallets();
   } else {
     $("wallet-list").innerHTML =
-      '<div class="muted"><strong>Demo mode.</strong> Wallet connection is disabled until the live enrollment API is configured.</div>';
-    $("wallet-state").textContent = "Demo mode: no wallet connection or transaction is requested.";
+      '<div class="muted"><strong>Wallet disabled.</strong> The public prototype does not request wallet access while the deployment is under security review.</div>';
+    $("wallet-state").textContent = "No wallet connection or transaction is requested on this deployment.";
     $("payment-box").hidden = true;
   }
   loadConfig();
