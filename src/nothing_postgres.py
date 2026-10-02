@@ -52,7 +52,7 @@ from src.nothing_verify import (
     validate_verification_event,
 )
 
-STORAGE_SCHEMA_VERSION = 14
+STORAGE_SCHEMA_VERSION = 16
 DEFAULT_POOL_MIN_SIZE = 2
 DEFAULT_POOL_MAX_SIZE = 10
 DEFAULT_POOL_TIMEOUT_SECONDS = 10
@@ -257,6 +257,169 @@ class PostgreSQLNothingStore:
             )
         except Exception:
             return False
+
+    @_translate_database_errors
+    def create_auth_challenge(
+        self,
+        *,
+        challenge_id: str,
+        purpose: str,
+        nonce: str,
+        wallet_address: str | None,
+        domain: str,
+        uri: str,
+        chain_id: int,
+        message_sha256: str,
+        issued_at: str,
+        expires_at: str,
+        recorded_at: str | None = None,
+        actor: str = "auth",
+    ) -> None:
+        challenge_id = str(challenge_id).strip()
+        purpose = str(purpose).strip()
+        nonce = str(nonce).strip()
+        domain = str(domain).strip()
+        uri = str(uri).strip()
+        message_sha256 = str(message_sha256).strip().lower()
+        actor = str(actor).strip()
+        if not challenge_id or not purpose or len(nonce) < 8:
+            raise ValueError("invalid authentication challenge fields")
+        if not domain or not uri or len(message_sha256) != 64:
+            raise ValueError("invalid authentication challenge fields")
+        if any(ch not in "0123456789abcdef" for ch in message_sha256):
+            raise ValueError("message_sha256 must be a SHA-256 hex digest")
+        if not isinstance(chain_id, int) or chain_id <= 0:
+            raise ValueError("chain_id must be a positive integer")
+        if not actor:
+            raise ValueError("actor must be non-empty")
+        recorded = recorded_at or _utc_now()
+        with self._pool.connection() as connection:
+            with connection.transaction():
+                try:
+                    connection.execute(
+                        """
+                        INSERT INTO auth_challenges(
+                            challenge_id, purpose, nonce, wallet_address, domain, uri,
+                            chain_id, message_sha256, issued_at, expires_at, created_at
+                        ) VALUES (
+                            %s, %s, %s, %s, %s, %s, %s, %s::timestamptz,
+                            %s::timestamptz, %s::timestamptz, %s::timestamptz
+                        )
+                        """,
+                        (
+                            challenge_id, purpose, nonce, wallet_address, domain, uri,
+                            chain_id, message_sha256, issued_at, expires_at, recorded,
+                        ),
+                    )
+                except self._UniqueViolation as exc:
+                    raise ConflictError("authentication challenge already exists") from exc
+                connection.execute(
+                    """
+                    INSERT INTO audit_log(
+                        recorded_at, actor, action, record_type, record_id, details_json
+                    ) VALUES (%s::timestamptz, %s, 'ISSUE', 'auth_challenge', %s, %s)
+                    """,
+                    (
+                        recorded,
+                        actor,
+                        challenge_id,
+                        json.dumps(
+                            {"purpose": purpose, "domain": domain},
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
+                    ),
+                )
+
+    @_translate_database_errors
+    def get_auth_challenge(self, challenge_id: str) -> dict[str, Any]:
+        challenge_id = str(challenge_id or "").strip()
+        if not challenge_id:
+            raise ValidationError("challenge_id is required")
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT challenge_id, purpose, nonce, wallet_address, domain, uri,
+                       chain_id, message_sha256, issued_at, expires_at,
+                       consumed_at, authorization_status, authorization_json, created_at
+                FROM auth_challenges
+                WHERE challenge_id = %s
+                """,
+                (challenge_id,),
+            ).fetchone()
+        if row is None:
+            raise NotFoundError(challenge_id)
+        return {
+            "challenge_id": str(row["challenge_id"]),
+            "purpose": row["purpose"],
+            "nonce": row["nonce"],
+            "wallet_address": row["wallet_address"],
+            "domain": row["domain"],
+            "uri": row["uri"],
+            "chain_id": int(row["chain_id"]),
+            "message_sha256": row["message_sha256"],
+            "issued_at": row["issued_at"].isoformat(),
+            "expires_at": row["expires_at"].isoformat(),
+            "consumed_at": row["consumed_at"].isoformat() if row["consumed_at"] else None,
+            "authorization_status": row["authorization_status"],
+            "authorization": row["authorization_json"],
+            "created_at": row["created_at"].isoformat(),
+        }
+
+    @_translate_database_errors
+    def authorize_auth_challenge(
+        self,
+        challenge_id: str,
+        *,
+        nonce: str,
+        message_sha256: str,
+        authorization: Mapping[str, Any],
+        now: str,
+        actor: str = "auth",
+    ) -> bool:
+        challenge_id = str(challenge_id or "").strip()
+        nonce = str(nonce or "").strip()
+        message_sha256 = str(message_sha256 or "").strip().lower()
+        actor = str(actor).strip()
+        now = str(now).strip()
+        if not challenge_id or not nonce or len(message_sha256) != 64 or not actor or not now:
+            raise ValueError("invalid authentication challenge authorization")
+        payload_json = _canonical_json(dict(authorization))
+        with self._pool.connection() as connection:
+            with connection.transaction():
+                row = connection.execute(
+                    """
+                    UPDATE auth_challenges
+                    SET consumed_at = %s::timestamptz,
+                        authorization_status = 'AUTHORIZED',
+                        authorization_json = %s::jsonb
+                    WHERE challenge_id = %s
+                      AND purpose = 'wallet_siwe'
+                      AND nonce = %s
+                      AND message_sha256 = %s
+                      AND consumed_at IS NULL
+                      AND authorization_status = 'PENDING'
+                      AND expires_at > %s::timestamptz
+                    RETURNING challenge_id
+                    """,
+                    (now, payload_json, challenge_id, nonce, message_sha256, now),
+                ).fetchone()
+                changed = row is not None
+                if changed:
+                    connection.execute(
+                        """
+                        INSERT INTO audit_log(
+                            recorded_at, actor, action, record_type, record_id, details_json
+                        ) VALUES (%s::timestamptz, %s, 'AUTHORIZE', 'auth_challenge', %s, %s)
+                        """,
+                        (
+                            now,
+                            actor,
+                            challenge_id,
+                            json.dumps({"authorization_status": "AUTHORIZED"}, separators=(",", ":")),
+                        ),
+                    )
+                return changed
 
     @_translate_database_errors
     def get_payment_worker_checkpoint(
