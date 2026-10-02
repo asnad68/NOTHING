@@ -317,8 +317,8 @@ class Handler(BaseHTTPRequestHandler):
         self.connection.settimeout(HTTP_REQUEST_TIMEOUT_SECONDS)
     server_version = "NOTHING-Enrollment/0.1"
 
-    def _send(self, status: int, payload: dict[str, Any]) -> None:
-        body = _json_bytes(payload)
+    def _send(self, status: int, payload: dict[str, Any] | None) -> None:
+        body = _json_bytes(payload) if payload is not None else b""
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
