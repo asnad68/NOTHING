@@ -480,8 +480,12 @@ def evaluate_official_claim(
     elif principal.method != "wallet_siwe":
         return OwnershipDecision("UNSUPPORTED_AUTHENTICATION_METHOD", False, "The authentication method is not approved for official organization claims.", domain, principal.method)
     normalized_brand = re.sub(r"[^a-z0-9]+", "", str(brand_name).casefold())
-    normalized_domain = domain.split(".")[0].casefold()
-    direct_name_match = normalized_brand == re.sub(r"[^a-z0-9]+", "", normalized_domain)
+    domain_labels = domain.split(".")
+    normalized_domain = domain_labels[0].casefold()
+    direct_name_match = (
+        len(domain_labels) == 2
+        and normalized_brand == re.sub(r"[^a-z0-9]+", "", normalized_domain)
+    )
     if direct_name_match or authoritative_name_match:
         return OwnershipDecision("ORGANIZATION_CONTROLLED", True, "Authenticated principal and independently verified organization domain satisfy the official claim policy.", domain, principal.method)
     return OwnershipDecision("REQUIRES_AUTHORITATIVE_REVIEW", False, "The requester controls the domain, but the brand name is not sufficiently bound to that domain for automatic official registration.", domain, principal.method)
