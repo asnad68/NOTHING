@@ -450,6 +450,10 @@ def verify_google_id_token(
         expected = normalize_domain(expected_domain)
         if email_domain != expected or hosted_domain != expected:
             raise IdentityControlError("Google identity is not bound to the expected organization domain")
+    if expected_nonce is not None:
+        actual_nonce = claims.get("nonce")
+        if not isinstance(actual_nonce, str) or not secrets.compare_digest(actual_nonce, str(expected_nonce)):
+            raise IdentityControlError("Google ID token nonce does not match the server-issued authentication challenge")
     return result
 
 
