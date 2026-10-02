@@ -50,8 +50,8 @@ from src.nothing_identity_control import (
     verify_siwe_signature,
 )
 
-HOST = os.getenv("NOTHING_ENROLLMENT_API_HOST", "127.0.0.1")
-PORT = int(os.getenv("NOTHING_ENROLLMENT_API_PORT", "8090"))
+HOST = os.getenv("NOTHING_ENROLLMENT_API_HOST", "0.0.0.0")
+PORT = int(os.getenv("NOTHING_ENROLLMENT_API_PORT", os.getenv("PORT", "8090")))
 ENABLED = os.getenv("NOTHING_ENROLLMENT_ENABLED", "false").lower() in {"1", "true", "yes"}
 PLAN_CODE = os.getenv("NOTHING_ENROLLMENT_PLAN_CODE", "business-registration").strip()
 PRICE_ID = os.getenv("NOTHING_ENROLLMENT_PRICE_ID", "").strip()
@@ -338,7 +338,22 @@ class Handler(BaseHTTPRequestHandler):
         self._error(429, "RATE_LIMITED", "Too many enrollment requests.")
         return False
 
+    def _origin_allowed(self) -> bool:
+        origin = self.headers.get("Origin")
+        if not origin or not ALLOWED_ORIGIN:
+            return True
+        return origin == ALLOWED_ORIGIN
+
+    def _require_allowed_origin(self) -> bool:
+        if self._origin_allowed():
+            return True
+        self._error(403, "ORIGIN_NOT_ALLOWED", "Browser origin is not authorized for this enrollment service.")
+        return False
+
     def do_OPTIONS(self) -> None:
+        if not self._origin_allowed():
+            self._send(403, {"error": {"code": "ORIGIN_NOT_ALLOWED", "detail": "Browser origin is not authorized for this enrollment service.", "status": 403}})
+            return
         self._send(204, {})
 
     def do_GET(self) -> None:
@@ -346,8 +361,19 @@ class Handler(BaseHTTPRequestHandler):
         path = parsed.path.rstrip("/") or "/"
         if not self._limit():
             return
-        if path == "/healthz":
-            self._send(200, {"status": "ok", "enabled": ENABLED})
+        if path in {"/healthz", "/readyz"}:
+            try:
+                store = PostgreSQLNothingStore.from_environment()
+                try:
+                    healthy = bool(store.health())
+                finally:
+                    store.close()
+            except Exception:
+                healthy = False
+            if path == "/healthz":
+                self._send(200 if healthy else 503, {"status": "ok" if healthy else "degraded", "enabled": ENABLED, "database": healthy})
+            else:
+                self._send(200 if healthy else 503, {"status": "ready" if healthy else "not_ready", "database": healthy})
             return
         if path == "/v1/organization/domain-challenge":
             if len(DOMAIN_CHALLENGE_SECRET) < 32:
@@ -402,6 +428,8 @@ class Handler(BaseHTTPRequestHandler):
         self._error(404, "NOT_FOUND", "Enrollment endpoint does not exist.")
 
     def do_POST(self) -> None:
+        if not self._require_allowed_origin():
+            return
         path = urlparse(self.path).path.rstrip("/") or "/"
         if not self._limit():
             return
