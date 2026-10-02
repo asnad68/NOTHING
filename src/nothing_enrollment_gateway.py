@@ -198,7 +198,7 @@ def _registration_authorization(
     registration: RegistrationDraft,
 ) -> dict[str, Any]:
     challenge = store.get_auth_challenge(challenge_id)
-    if challenge["purpose"] != "wallet_siwe":
+    if challenge["purpose"] not in {"wallet_siwe", "google_oidc"}:
         raise ConflictError("authentication challenge purpose is not valid for official registration")
     if challenge["authorization_status"] != "AUTHORIZED":
         raise ConflictError("official registration authorization is not active")
@@ -221,7 +221,6 @@ def _registration_authorization(
     return authorization
 
 
-def _read_body(handler: BaseHTTPRequestHandler) -> bytes:
 def _read_body(handler: BaseHTTPRequestHandler) -> bytes:
     header = handler.headers.get("Content-Length")
     if header is None:
