@@ -180,535 +180,19 @@ class NothingStore(Protocol):
     ) -> bool:
         ...
 
-    def consume_auth_authorization(
+    def authorize_google_challenge(
         self,
         challenge_id: str,
         *,
-        registration_digest: str,
-        wallet_address: str,
+        nonce: str,
+        message_sha256: str,
+        authorization: Mapping[str, Any],
         now: str,
         actor: str = "auth",
     ) -> bool:
         ...
 
-
-def _utc_now() -> str:
-    return (
-        datetime.now(timezone.utc)
-        .replace(microsecond=0)
-        .isoformat()
-        .replace("+00:00", "Z")
-    )
-
-
-def _canonical_json(payload: Mapping[str, Any]) -> str:
-    return json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-
-
-def _content_hash(payload: Mapping[str, Any]) -> str:
-    return hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
-
-
-def _parse_time(value: str) -> datetime:
-    normalized = value[:-1] + "+00:00" if value.endswith(("Z", "z")) else value
-    parsed = datetime.fromisoformat(normalized)
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise ValueError(f"datetime must include timezone: {value}")
-    return parsed.astimezone(timezone.utc)
-
-
-def _max_time(values: Sequence[str]) -> str:
-    cleaned = [item for item in values if item]
-    return max(cleaned, key=_parse_time) if cleaned else _utc_now()
-
-
-MIGRATION_001 = """
-CREATE TABLE IF NOT EXISTS schema_migrations (
-    version INTEGER PRIMARY KEY,
-    applied_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS identity_revisions (
-    nothing_id TEXT NOT NULL,
-    revision INTEGER NOT NULL,
-    protocol_version TEXT NOT NULL,
-    payload_json TEXT NOT NULL,
-    content_sha256 TEXT NOT NULL,
-    recorded_at TEXT NOT NULL,
-    recorded_by TEXT NOT NULL,
-    previous_content_sha256 TEXT,
-    PRIMARY KEY (nothing_id, revision),
-    UNIQUE (nothing_id, content_sha256)
-);
-
-CREATE TABLE IF NOT EXISTS identity_heads (
-    nothing_id TEXT PRIMARY KEY,
-    revision INTEGER NOT NULL,
-    content_sha256 TEXT NOT NULL,
-    FOREIGN KEY (nothing_id, revision)
-        REFERENCES identity_revisions(nothing_id, revision)
-        ON DELETE RESTRICT
-        ON UPDATE RESTRICT
-);
-
-CREATE TABLE IF NOT EXISTS evidence (
-    evidence_id TEXT PRIMARY KEY,
-    protocol_version TEXT NOT NULL,
-    payload_json TEXT NOT NULL,
-    content_sha256 TEXT NOT NULL UNIQUE,
-    recorded_at TEXT NOT NULL,
-    recorded_by TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS procedures (
-    procedure_id TEXT NOT NULL,
-    version TEXT NOT NULL,
-    payload_json TEXT NOT NULL,
-    content_sha256 TEXT NOT NULL UNIQUE,
-    status TEXT NOT NULL,
-    published_at TEXT,
-    recorded_at TEXT NOT NULL,
-    recorded_by TEXT NOT NULL,
-    PRIMARY KEY (procedure_id, version)
-);
-
-CREATE TABLE IF NOT EXISTS verification_events (
-    event_id TEXT PRIMARY KEY,
-    protocol_version TEXT NOT NULL,
-    subject TEXT NOT NULL,
-    claim_id TEXT NOT NULL,
-    occurred_at TEXT NOT NULL,
-    procedure_id TEXT NOT NULL,
-    procedure_version TEXT NOT NULL,
-    supersedes_event_id TEXT,
-    payload_json TEXT NOT NULL,
-    content_sha256 TEXT NOT NULL UNIQUE,
-    recorded_at TEXT NOT NULL,
-    recorded_by TEXT NOT NULL,
-    FOREIGN KEY (subject)
-        REFERENCES identity_heads(nothing_id)
-        ON DELETE RESTRICT
-        ON UPDATE RESTRICT,
-    FOREIGN KEY (procedure_id, procedure_version)
-        REFERENCES procedures(procedure_id, version)
-        ON DELETE RESTRICT
-        ON UPDATE RESTRICT,
-    FOREIGN KEY (supersedes_event_id)
-        REFERENCES verification_events(event_id)
-        ON DELETE RESTRICT
-        ON UPDATE RESTRICT
-);
-
-CREATE TABLE IF NOT EXISTS event_evidence (
-    event_id TEXT NOT NULL,
-    evidence_id TEXT NOT NULL,
-    PRIMARY KEY (event_id, evidence_id),
-    FOREIGN KEY (event_id)
-        REFERENCES verification_events(event_id)
-        ON DELETE RESTRICT
-        ON UPDATE RESTRICT,
-    FOREIGN KEY (evidence_id)
-        REFERENCES evidence(evidence_id)
-        ON DELETE RESTRICT
-        ON UPDATE RESTRICT
-);
-
-CREATE TABLE IF NOT EXISTS audit_log (
-    audit_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    recorded_at TEXT NOT NULL,
-    actor TEXT NOT NULL,
-    action TEXT NOT NULL,
-    record_type TEXT NOT NULL,
-    record_id TEXT NOT NULL,
-    revision INTEGER,
-    content_sha256 TEXT,
-    details_json TEXT
-);
-
-CREATE INDEX IF NOT EXISTS idx_identity_heads_revision
-    ON identity_heads(revision);
-
-CREATE INDEX IF NOT EXISTS idx_identity_revisions_latest
-    ON identity_revisions(nothing_id, revision DESC);
-
-CREATE INDEX IF NOT EXISTS idx_events_subject_time
-    ON verification_events(subject, occurred_at, event_id);
-
-CREATE INDEX IF NOT EXISTS idx_events_claim
-    ON verification_events(subject, claim_id, occurred_at);
-
-CREATE INDEX IF NOT EXISTS idx_event_evidence_evidence
-    ON event_evidence(evidence_id);
-
-CREATE TRIGGER IF NOT EXISTS identity_revisions_no_update
-BEFORE UPDATE ON identity_revisions
-BEGIN
-    SELECT RAISE(ABORT, 'identity revisions are append-only');
-END;
-
-CREATE TRIGGER IF NOT EXISTS identity_revisions_no_delete
-BEFORE DELETE ON identity_revisions
-BEGIN
-    SELECT RAISE(ABORT, 'identity revisions are append-only');
-END;
-
-CREATE TRIGGER IF NOT EXISTS evidence_no_update
-BEFORE UPDATE ON evidence
-BEGIN
-    SELECT RAISE(ABORT, 'evidence records are immutable');
-END;
-
-CREATE TRIGGER IF NOT EXISTS evidence_no_delete
-BEFORE DELETE ON evidence
-BEGIN
-    SELECT RAISE(ABORT, 'evidence records are immutable');
-END;
-
-CREATE TRIGGER IF NOT EXISTS procedures_no_update
-BEFORE UPDATE ON procedures
-BEGIN
-    SELECT RAISE(ABORT, 'procedure versions are immutable');
-END;
-
-CREATE TRIGGER IF NOT EXISTS procedures_no_delete
-BEFORE DELETE ON procedures
-BEGIN
-    SELECT RAISE(ABORT, 'procedure versions are immutable');
-END;
-
-CREATE TRIGGER IF NOT EXISTS verification_events_no_update
-BEFORE UPDATE ON verification_events
-BEGIN
-    SELECT RAISE(ABORT, 'verification events are immutable');
-END;
-
-CREATE TRIGGER IF NOT EXISTS verification_events_no_delete
-BEFORE DELETE ON verification_events
-BEGIN
-    SELECT RAISE(ABORT, 'verification events are immutable');
-END;
-
-CREATE TRIGGER IF NOT EXISTS event_evidence_no_update
-BEFORE UPDATE ON event_evidence
-BEGIN
-    SELECT RAISE(ABORT, 'event evidence links are immutable');
-END;
-
-CREATE TRIGGER IF NOT EXISTS event_evidence_no_delete
-BEFORE DELETE ON event_evidence
-BEGIN
-    SELECT RAISE(ABORT, 'event evidence links are immutable');
-END;
-
-CREATE TRIGGER IF NOT EXISTS audit_log_no_update
-BEFORE UPDATE ON audit_log
-BEGIN
-    SELECT RAISE(ABORT, 'audit log is append-only');
-END;
-
-CREATE TRIGGER IF NOT EXISTS audit_log_no_delete
-BEFORE DELETE ON audit_log
-BEGIN
-    SELECT RAISE(ABORT, 'audit log is append-only');
-END;
-""".strip()
-
-MIGRATION_002 = """
-CREATE TABLE IF NOT EXISTS ingestion_idempotency (
-    actor TEXT NOT NULL,
-    idempotency_key TEXT NOT NULL,
-    request_sha256 TEXT NOT NULL,
-    ingestion_id TEXT NOT NULL UNIQUE,
-    status_code INTEGER NOT NULL,
-    result_json TEXT NOT NULL,
-    recorded_at TEXT NOT NULL,
-    PRIMARY KEY (actor, idempotency_key)
-);
-
-CREATE INDEX IF NOT EXISTS idx_ingestion_idempotency_recorded_at
-    ON ingestion_idempotency(recorded_at);
-
-CREATE TRIGGER IF NOT EXISTS ingestion_idempotency_no_update
-BEFORE UPDATE ON ingestion_idempotency
-BEGIN
-    SELECT RAISE(ABORT, 'ingestion idempotency records are immutable');
-END;
-
-CREATE TRIGGER IF NOT EXISTS ingestion_idempotency_no_delete
-BEFORE DELETE ON ingestion_idempotency
-BEGIN
-    SELECT RAISE(ABORT, 'ingestion idempotency records are append-only');
-END;
-""".strip()
-
-MIGRATION_003 = """
-CREATE TABLE IF NOT EXISTS cryptographic_proofs (
-    envelope_id TEXT PRIMARY KEY,
-    version TEXT NOT NULL,
-    resource_type TEXT NOT NULL,
-    resource_id TEXT NOT NULL,
-    resource_hash TEXT NOT NULL,
-    issuer_id TEXT NOT NULL,
-    key_id TEXT NOT NULL,
-    payload_json TEXT NOT NULL,
-    content_sha256 TEXT NOT NULL UNIQUE,
-    recorded_at TEXT NOT NULL,
-    recorded_by TEXT NOT NULL,
-    CHECK (resource_type IN ('identity', 'evidence', 'verification_event')),
-    CHECK (
-        (resource_type = 'identity' AND resource_id GLOB 'NTH-[0-9][0-9][0-9][0-9][0-9][0-9]')
-        OR
-        (resource_type = 'evidence' AND resource_id GLOB 'EVD-[0-9][0-9][0-9][0-9][0-9][0-9]')
-        OR
-        (resource_type = 'verification_event' AND resource_id GLOB 'VER-[0-9][0-9][0-9][0-9][0-9][0-9]')
-    )
-);
-
-CREATE INDEX IF NOT EXISTS idx_proofs_resource
-    ON cryptographic_proofs(resource_type, resource_id, envelope_id);
-
-CREATE TRIGGER IF NOT EXISTS cryptographic_proofs_no_update
-BEFORE UPDATE ON cryptographic_proofs
-BEGIN
-    SELECT RAISE(ABORT, 'cryptographic proofs are immutable');
-END;
-
-CREATE TRIGGER IF NOT EXISTS cryptographic_proofs_no_delete
-BEFORE DELETE ON cryptographic_proofs
-BEGIN
-    SELECT RAISE(ABORT, 'cryptographic proofs are immutable');
-END;
-""".strip()
-
-MIGRATION_004 = """
-CREATE TABLE IF NOT EXISTS auth_challenges (
-    challenge_id TEXT PRIMARY KEY,
-    purpose TEXT NOT NULL,
-    nonce TEXT NOT NULL,
-    wallet_address TEXT,
-    domain TEXT NOT NULL,
-    uri TEXT NOT NULL,
-    chain_id INTEGER NOT NULL,
-    message_sha256 TEXT NOT NULL,
-    issued_at TEXT NOT NULL,
-    expires_at TEXT NOT NULL,
-    consumed_at TEXT,
-    authorization_status TEXT NOT NULL DEFAULT 'PENDING',
-    authorization_json TEXT,
-    created_at TEXT NOT NULL,
-    CHECK (chain_id > 0),
-    CHECK (authorization_status IN ('PENDING', 'AUTHORIZED', 'REJECTED'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_auth_challenges_expiry
-    ON auth_challenges(expires_at);
-
-CREATE INDEX IF NOT EXISTS idx_auth_challenges_wallet
-    ON auth_challenges(wallet_address);
-
-CREATE INDEX IF NOT EXISTS idx_auth_challenges_status
-    ON auth_challenges(authorization_status, expires_at);
-
-CREATE TRIGGER IF NOT EXISTS auth_challenges_immutable_fields
-BEFORE UPDATE ON auth_challenges
-WHEN NEW.challenge_id <> OLD.challenge_id
-  OR NEW.purpose <> OLD.purpose
-  OR NEW.nonce <> OLD.nonce
-  OR COALESCE(NEW.wallet_address, '') <> COALESCE(OLD.wallet_address, '')
-  OR NEW.domain <> OLD.domain
-  OR NEW.uri <> OLD.uri
-  OR NEW.chain_id <> OLD.chain_id
-  OR NEW.message_sha256 <> OLD.message_sha256
-  OR NEW.issued_at <> OLD.issued_at
-  OR NEW.expires_at <> OLD.expires_at
-  OR NEW.created_at <> OLD.created_at
-BEGIN
-    SELECT RAISE(ABORT, 'auth challenge immutable fields cannot be changed');
-END;
-""".strip()
-
-class SQLiteNothingStore:
-    """Durable single-node store implementing the NOTHING storage port."""
-
-    demo = False
-
-    def __init__(self, db_path: str | Path = DEFAULT_DB_PATH, *, demo: bool = False) -> None:
-        self.db_path = Path(db_path).expanduser().resolve()
-        self.demo = demo
-        if self.db_path.parent:
-            self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._migrate()
-
-    def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(
-            self.db_path,
-            timeout=5.0,
-            isolation_level=None,
-            check_same_thread=False,
-        )
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute("PRAGMA busy_timeout = 5000")
-        connection.execute("PRAGMA journal_mode = WAL")
-        connection.execute("PRAGMA synchronous = FULL")
-        connection.execute("PRAGMA trusted_schema = OFF")
-        return connection
-
-    def _migrate(self) -> None:
-        migrations = (
-            (1, MIGRATION_001),
-            (2, MIGRATION_002),
-            (3, MIGRATION_003),
-            (4, MIGRATION_004),
-            (5, MIGRATION_005),
-        )
-        with self._connect() as connection:
-            connection.execute(
-                """
-                CREATE TABLE IF NOT EXISTS schema_migrations (
-                    version INTEGER PRIMARY KEY,
-                    applied_at TEXT NOT NULL
-                )
-                """
-            )
-            row = connection.execute(
-                "SELECT MAX(version) AS version FROM schema_migrations"
-            ).fetchone()
-            current = int(row["version"] or 0)
-            for version, migration in migrations:
-                if version <= current:
-                    continue
-                connection.executescript(migration)
-                connection.execute(
-                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
-                    (version, _utc_now()),
-                )
-
-    def close(self) -> None:
-        return None
-
-    def health(self) -> bool:
-        try:
-            with self._connect() as connection:
-                connection.execute("SELECT 1").fetchone()
-            return True
-        except sqlite3.Error:
-            return False
-
-    def create_auth_challenge(
-        self,
-        *,
-        challenge_id: str,
-        purpose: str,
-        nonce: str,
-        wallet_address: str | None,
-        domain: str,
-        uri: str,
-        chain_id: int,
-        message_sha256: str,
-        issued_at: str,
-        expires_at: str,
-        recorded_at: str | None = None,
-        actor: str = "auth",
-    ) -> None:
-        challenge_id = str(challenge_id).strip()
-        purpose = str(purpose).strip()
-        nonce = str(nonce).strip()
-        domain = str(domain).strip()
-        uri = str(uri).strip()
-        message_sha256 = str(message_sha256).strip().lower()
-        actor = str(actor).strip()
-        if not challenge_id or not purpose or len(nonce) < 8:
-            raise ValueError("invalid authentication challenge fields")
-        if not domain or not uri or len(message_sha256) != 64:
-            raise ValueError("invalid authentication challenge fields")
-        if any(ch not in "0123456789abcdef" for ch in message_sha256):
-            raise ValueError("message_sha256 must be a SHA-256 hex digest")
-        if not isinstance(chain_id, int) or chain_id <= 0:
-            raise ValueError("chain_id must be a positive integer")
-        if not actor:
-            raise ValueError("actor must be non-empty")
-        recorded = recorded_at or _utc_now()
-        with self._connect() as connection:
-            try:
-                connection.execute("BEGIN IMMEDIATE")
-                connection.execute(
-                    """
-                    INSERT INTO auth_challenges(
-                        challenge_id, purpose, nonce, wallet_address, domain, uri,
-                        chain_id, message_sha256, issued_at, expires_at, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        challenge_id, purpose, nonce, wallet_address, domain, uri,
-                        chain_id, message_sha256, issued_at, expires_at, recorded,
-                    ),
-                )
-                connection.execute(
-                    """
-                    INSERT INTO audit_log(
-                        recorded_at, actor, action, record_type, record_id, details_json
-                    ) VALUES (?, ?, 'ISSUE', 'auth_challenge', ?, ?)
-                    """,
-                    (
-                        recorded,
-                        actor,
-                        challenge_id,
-                        json.dumps(
-                            {"purpose": purpose, "domain": domain},
-                            sort_keys=True,
-                            separators=(",", ":"),
-                        ),
-                    ),
-                )
-                connection.execute("COMMIT")
-            except sqlite3.IntegrityError as exc:
-                connection.execute("ROLLBACK")
-                raise ConflictError("authentication challenge already exists") from exc
-            except Exception:
-                connection.execute("ROLLBACK")
-                raise
-
-    def get_auth_challenge(self, challenge_id: str) -> dict[str, Any]:
-        challenge_id = str(challenge_id or "").strip()
-        if not challenge_id:
-            raise ValidationError("challenge_id is required")
-        with self._connect() as connection:
-            row = connection.execute(
-                """
-                SELECT challenge_id, purpose, nonce, wallet_address, domain, uri,
-                       chain_id, message_sha256, issued_at, expires_at,
-                       consumed_at, authorization_status, authorization_json, created_at
-                FROM auth_challenges
-                WHERE challenge_id = ?
-                """,
-                (challenge_id,),
-            ).fetchone()
-        if row is None:
-            raise NotFoundError(challenge_id)
-        return {
-            "challenge_id": row["challenge_id"],
-            "purpose": row["purpose"],
-            "nonce": row["nonce"],
-            "wallet_address": row["wallet_address"],
-            "domain": row["domain"],
-            "uri": row["uri"],
-            "chain_id": int(row["chain_id"]),
-            "message_sha256": row["message_sha256"],
-            "issued_at": row["issued_at"],
-            "expires_at": row["expires_at"],
-            "consumed_at": row["consumed_at"],
-            "authorization_status": row["authorization_status"],
-            "authorization": json.loads(row["authorization_json"]) if row["authorization_json"] else None,
-            "created_at": row["created_at"],
-        }
-
-    def authorize_auth_challenge(
+    def authorize_google_challenge(
         self,
         challenge_id: str,
         *,
@@ -724,7 +208,7 @@ class SQLiteNothingStore:
         actor = str(actor).strip()
         now = str(now).strip()
         if not challenge_id or not nonce or len(message_sha256) != 64 or not actor or not now:
-            raise ValueError("invalid authentication challenge authorization")
+            raise ValueError("invalid Google authentication authorization")
         payload_json = _canonical_json(dict(authorization))
         with self._connect() as connection:
             try:
@@ -736,7 +220,7 @@ class SQLiteNothingStore:
                         authorization_status = 'AUTHORIZED',
                         authorization_json = ?
                     WHERE challenge_id = ?
-                      AND purpose = 'wallet_siwe'
+                      AND purpose = 'google_oidc'
                       AND nonce = ?
                       AND message_sha256 = ?
                       AND consumed_at IS NULL
@@ -757,65 +241,7 @@ class SQLiteNothingStore:
                             now,
                             actor,
                             challenge_id,
-                            json.dumps({"authorization_status": "AUTHORIZED"}, separators=(",", ":")),
-                        ),
-                    )
-                connection.execute("COMMIT")
-                return changed
-            except Exception:
-                connection.execute("ROLLBACK")
-                raise
-
-    def reject_auth_challenge(
-        self,
-        challenge_id: str,
-        *,
-        nonce: str,
-        message_sha256: str,
-        decision: Mapping[str, Any],
-        now: str,
-        actor: str = "auth",
-    ) -> bool:
-        challenge_id = str(challenge_id or "").strip()
-        nonce = str(nonce or "").strip()
-        message_sha256 = str(message_sha256 or "").strip().lower()
-        actor = str(actor).strip()
-        now = str(now).strip()
-        if not challenge_id or not nonce or len(message_sha256) != 64 or not actor or not now:
-            raise ValueError("invalid authentication challenge rejection")
-        payload_json = _canonical_json(dict(decision))
-        with self._connect() as connection:
-            try:
-                connection.execute("BEGIN IMMEDIATE")
-                cursor = connection.execute(
-                    """
-                    UPDATE auth_challenges
-                    SET consumed_at = ?,
-                        authorization_status = 'REJECTED',
-                        authorization_json = ?
-                    WHERE challenge_id = ?
-                      AND purpose = 'wallet_siwe'
-                      AND nonce = ?
-                      AND message_sha256 = ?
-                      AND consumed_at IS NULL
-                      AND authorization_status = 'PENDING'
-                      AND expires_at > ?
-                    """,
-                    (now, payload_json, challenge_id, nonce, message_sha256, now),
-                )
-                changed = cursor.rowcount == 1
-                if changed:
-                    connection.execute(
-                        """
-                        INSERT INTO audit_log(
-                            recorded_at, actor, action, record_type, record_id, details_json
-                        ) VALUES (?, ?, 'REJECT', 'auth_challenge', ?, ?)
-                        """,
-                        (
-                            now,
-                            actor,
-                            challenge_id,
-                            json.dumps({"authorization_status": "REJECTED"}, separators=(",", ":")),
+                            json.dumps({"authorization_status": "AUTHORIZED", "method": "google_oidc"}, separators=(",", ":")),
                         ),
                     )
                 connection.execute("COMMIT")
@@ -829,24 +255,24 @@ class SQLiteNothingStore:
         challenge_id: str,
         *,
         registration_digest: str,
-        wallet_address: str,
+        wallet_address: str | None,
         now: str,
         actor: str = "auth",
     ) -> bool:
         challenge_id = str(challenge_id or "").strip()
         registration_digest = str(registration_digest or "").strip().lower()
-        wallet_address = str(wallet_address or "").strip().lower()
+        wallet_address = str(wallet_address or "").strip().lower() if wallet_address else None
         now = str(now).strip()
         actor = str(actor).strip()
-        if not challenge_id or len(registration_digest) != 64 or not wallet_address or not now or not actor:
+        if not challenge_id or len(registration_digest) != 64 or not now or not actor:
             raise ValueError("invalid authentication authorization consumption")
         with self._connect() as connection:
             try:
                 connection.execute("BEGIN IMMEDIATE")
                 row = connection.execute(
                     """
-                    SELECT authorization_json, wallet_address, authorization_status,
-                           registration_consumed_at, expires_at
+                    SELECT purpose, wallet_address, authorization_status,
+                           authorization_json, registration_consumed_at, expires_at
                     FROM auth_challenges
                     WHERE challenge_id = ?
                     """,
@@ -856,10 +282,18 @@ class SQLiteNothingStore:
                     connection.execute("ROLLBACK")
                     raise NotFoundError(challenge_id)
                 authorization = json.loads(row["authorization_json"]) if row["authorization_json"] else {}
+                wallet_ok = (
+                    row["purpose"] == "google_oidc"
+                    or (
+                        row["purpose"] == "wallet_siwe"
+                        and wallet_address is not None
+                        and str(row["wallet_address"] or "").lower() == wallet_address
+                    )
+                )
                 valid = (
                     row["authorization_status"] == "AUTHORIZED"
                     and row["registration_consumed_at"] is None
-                    and str(row["wallet_address"] or "").lower() == wallet_address
+                    and wallet_ok
                     and str(authorization.get("registration_digest", "")).lower() == registration_digest
                     and _parse_time(str(row["expires_at"])) > _parse_time(now)
                 )
