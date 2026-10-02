@@ -346,7 +346,7 @@ def issue_domain_challenge_token(domain: str, secret: str, *, now: datetime | No
         raise IdentityControlError("domain challenge TTL must be between 5 minutes and 24 hours")
     current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).replace(microsecond=0)
     expires = int(current.timestamp()) + ttl_seconds
-    nonce = secrets.token_urlsafe(24)
+    nonce = secrets.token_hex(24)
     unsigned = f"v1|{domain}|{expires}|{nonce}"
     signature = hmac.new(secret.encode("utf-8"), unsigned.encode("utf-8"), hashlib.sha256).hexdigest()
     token = f"{unsigned}|{signature}"
