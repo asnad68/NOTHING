@@ -310,6 +310,10 @@ def _public_identity(
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+
+    def setup(self) -> None:
+        super().setup()
+        self.connection.settimeout(HTTP_REQUEST_TIMEOUT_SECONDS)
     server_version = "NOTHING-Enrollment/0.1"
 
     def _send(self, status: int, payload: dict[str, Any]) -> None:
@@ -325,6 +329,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Idempotency-Key")
         self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         self.end_headers()
         if body:
             self.wfile.write(body)
@@ -354,7 +359,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self._origin_allowed():
             self._send(403, {"error": {"code": "ORIGIN_NOT_ALLOWED", "detail": "Browser origin is not authorized for this enrollment service.", "status": 403}})
             return
-        self._send(204, {})
+        self._send(204, None)
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
@@ -376,6 +381,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200 if healthy else 503, {"status": "ready" if healthy else "not_ready", "database": healthy})
             return
         if path == "/v1/organization/domain-challenge":
+            if not IDENTITY_CONTROL_ENABLED:
+                self._error(503, "IDENTITY_CONTROL_UNAVAILABLE", "Official organization registration is not activated on this deployment.")
+                return
             if len(DOMAIN_CHALLENGE_SECRET) < 32:
                 self._error(503, "DOMAIN_VERIFICATION_UNAVAILABLE", "Domain verification is not configured on this deployment.")
                 return
@@ -730,6 +738,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/v1/organization/domain-verify":
             try:
+                _require_identity_control()
                 payload = _safe_json(_read_body(self))
                 domain = normalize_domain(payload.get("domain", ""))
                 token = str(payload.get("challenge", "")).strip()
