@@ -128,3 +128,14 @@ Payment -> company ownership
 ```
 
 Those flows are not strong enough for the purpose of an identity and verification infrastructure.
+## Implemented registration endpoints
+
+The deployment-gated enrollment service exposes the following organization-control endpoints:
+
+- `GET /v1/organization/domain-challenge?domain=example.com` — issues a signed, expiring DNS TXT challenge.
+- `POST /v1/organization/domain-verify` — independently checks that TXT challenge in DNS.
+- `POST /v1/auth/wallet/challenge` — issues a server-bound SIWE message with a one-time nonce.
+- `POST /v1/organization/wallet-authorize` — verifies the SIWE signature, DNS control and brand/domain policy, then creates a registration-bound authorization.
+- `POST /v1/organization/google-authorize` — verifies the Google OIDC ID token, Google Workspace domain, DNS control and brand/domain policy, then creates a registration-bound authorization.
+
+The public web UI keeps these paths disabled until the deployment-specific API origin, domain challenge secret, Google OAuth client ID and authentication gates are configured.
