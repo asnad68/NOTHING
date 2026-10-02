@@ -48,7 +48,7 @@ class IdentityControlTests(unittest.TestCase):
     def test_domain_challenge_is_stable_when_supplied(self):
         challenge = build_domain_challenge("apple.com", challenge="fixed-test-token-12345678901234567890")
         self.assertEqual(challenge.record_name, "_nothing-challenge.apple.com")
-        self.assertEqual(challenge.record_value, "NOTHING-DOMAIN-VERIFICATION=fixed-test-token")
+        self.assertEqual(challenge.record_value, "NOTHING-DOMAIN-VERIFICATION=fixed-test-token-12345678901234567890")
         self.assertEqual(len(challenge.challenge_digest), 64)
 
     def test_wallet_is_not_company_ownership_by_itself(self):
