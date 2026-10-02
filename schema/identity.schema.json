@@ -115,6 +115,7 @@
               "type": "string",
               "enum": [
                 "official_website",
+                "domain_control",
                 "public_record",
                 "authorized_document",
                 "third_party_source",
