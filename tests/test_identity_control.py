@@ -124,6 +124,23 @@ class IdentityControlTests(unittest.TestCase):
         self.assertIn("nothing.example wants you to sign in", message)
         self.assertIn("Nonce: ABCDEFGH1234", message)
 
+    def test_signed_domain_challenge_expires_and_rejects_tampering(self):
+        from datetime import datetime, timedelta, timezone
+        from src.nothing_identity_control import issue_domain_challenge_token, verify_domain_challenge_token
+        now = datetime(2026, 10, 2, 20, 0, 0, tzinfo=timezone.utc)
+        challenge = issue_domain_challenge_token(
+            "apple.com",
+            "x" * 40,
+            now=now,
+            ttl_seconds=1800,
+        )
+        self.assertTrue(verify_domain_challenge_token(challenge.challenge, "apple.com", "x" * 40, now=now))
+        self.assertFalse(verify_domain_challenge_token(challenge.challenge, "example.com", "x" * 40, now=now))
+        expired = now + timedelta(seconds=1801)
+        self.assertFalse(verify_domain_challenge_token(challenge.challenge, "apple.com", "x" * 40, now=expired))
+
+    def test_idn_domain_normalizes_to_ascii(self):
+        self.assertEqual(normalize_domain("münich.example"), "xn--mnich-kva.example")
 
 if __name__ == "__main__":
     unittest.main()
