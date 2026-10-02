@@ -59,6 +59,30 @@ The long-term vision is:
 
 > **One business identity. Many proofs. One simple way to verify.**
 
+### Official organization control
+
+NOTHING separates authentication from authorization.
+
+A Google account or crypto wallet can authenticate an operator, but neither one alone proves the operator is entitled to represent a company or brand. Official organization registration therefore requires independent organization-domain control and a brand/domain binding decision.
+
+The intended automatic gate is:
+
+```text
+Google Workspace or SIWE
+        ↓
+Authenticated principal
+        ↓
+DNS TXT domain control
+        ↓
+Brand ↔ domain binding
+        ↓
+ORGANIZATION-CONTROLLED
+```
+
+Personal Gmail accounts and unrelated wallets cannot create an official organization claim for an unrelated brand merely by typing its name.
+
+See `docs/REGISTRATION-AUTHORIZATION.md` for the full policy.
+
 ---
 
 ## NOTHING ID
