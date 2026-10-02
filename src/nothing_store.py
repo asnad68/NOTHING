@@ -45,7 +45,7 @@ from src.nothing_verify import (
     validate_verification_event,
 )
 
-STORAGE_SCHEMA_VERSION = 3
+STORAGE_SCHEMA_VERSION = 4
 DEFAULT_DB_PATH = Path("data/nothing.db")
 
 
@@ -133,6 +133,39 @@ class NothingStore(Protocol):
         ingestion_id: str,
         recorded_at: str | None = None,
     ) -> IngestionResult:
+        ...
+
+    def create_auth_challenge(
+        self,
+        *,
+        challenge_id: str,
+        purpose: str,
+        nonce: str,
+        wallet_address: str | None,
+        domain: str,
+        uri: str,
+        chain_id: int,
+        message_sha256: str,
+        issued_at: str,
+        expires_at: str,
+        recorded_at: str | None = None,
+        actor: str = "auth",
+    ) -> None:
+        ...
+
+    def get_auth_challenge(self, challenge_id: str) -> dict[str, Any]:
+        ...
+
+    def authorize_auth_challenge(
+        self,
+        challenge_id: str,
+        *,
+        nonce: str,
+        message_sha256: str,
+        authorization: Mapping[str, Any],
+        now: str,
+        actor: str = "auth",
+    ) -> bool:
         ...
 
 
@@ -429,6 +462,53 @@ BEGIN
 END;
 """.strip()
 
+MIGRATION_004 = """
+CREATE TABLE IF NOT EXISTS auth_challenges (
+    challenge_id TEXT PRIMARY KEY,
+    purpose TEXT NOT NULL,
+    nonce TEXT NOT NULL,
+    wallet_address TEXT,
+    domain TEXT NOT NULL,
+    uri TEXT NOT NULL,
+    chain_id INTEGER NOT NULL,
+    message_sha256 TEXT NOT NULL,
+    issued_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    consumed_at TEXT,
+    authorization_status TEXT NOT NULL DEFAULT 'PENDING',
+    authorization_json TEXT,
+    created_at TEXT NOT NULL,
+    CHECK (chain_id > 0),
+    CHECK (authorization_status IN ('PENDING', 'AUTHORIZED', 'REJECTED'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_challenges_expiry
+    ON auth_challenges(expires_at);
+
+CREATE INDEX IF NOT EXISTS idx_auth_challenges_wallet
+    ON auth_challenges(wallet_address);
+
+CREATE INDEX IF NOT EXISTS idx_auth_challenges_status
+    ON auth_challenges(authorization_status, expires_at);
+
+CREATE TRIGGER IF NOT EXISTS auth_challenges_immutable_fields
+BEFORE UPDATE ON auth_challenges
+WHEN NEW.challenge_id <> OLD.challenge_id
+  OR NEW.purpose <> OLD.purpose
+  OR NEW.nonce <> OLD.nonce
+  OR COALESCE(NEW.wallet_address, '') <> COALESCE(OLD.wallet_address, '')
+  OR NEW.domain <> OLD.domain
+  OR NEW.uri <> OLD.uri
+  OR NEW.chain_id <> OLD.chain_id
+  OR NEW.message_sha256 <> OLD.message_sha256
+  OR NEW.issued_at <> OLD.issued_at
+  OR NEW.expires_at <> OLD.expires_at
+  OR NEW.created_at <> OLD.created_at
+BEGIN
+    SELECT RAISE(ABORT, 'auth challenge immutable fields cannot be changed');
+END;
+""".strip()
+
 class SQLiteNothingStore:
     """Durable single-node store implementing the NOTHING storage port."""
 
@@ -461,6 +541,7 @@ class SQLiteNothingStore:
             (1, MIGRATION_001),
             (2, MIGRATION_002),
             (3, MIGRATION_003),
+            (4, MIGRATION_004),
         )
         with self._connect() as connection:
             connection.execute(
@@ -494,6 +575,172 @@ class SQLiteNothingStore:
             return True
         except sqlite3.Error:
             return False
+
+    def create_auth_challenge(
+        self,
+        *,
+        challenge_id: str,
+        purpose: str,
+        nonce: str,
+        wallet_address: str | None,
+        domain: str,
+        uri: str,
+        chain_id: int,
+        message_sha256: str,
+        issued_at: str,
+        expires_at: str,
+        recorded_at: str | None = None,
+        actor: str = "auth",
+    ) -> None:
+        challenge_id = str(challenge_id).strip()
+        purpose = str(purpose).strip()
+        nonce = str(nonce).strip()
+        domain = str(domain).strip()
+        uri = str(uri).strip()
+        message_sha256 = str(message_sha256).strip().lower()
+        actor = str(actor).strip()
+        if not challenge_id or not purpose or len(nonce) < 8:
+            raise ValueError("invalid authentication challenge fields")
+        if not domain or not uri or len(message_sha256) != 64:
+            raise ValueError("invalid authentication challenge fields")
+        if any(ch not in "0123456789abcdef" for ch in message_sha256):
+            raise ValueError("message_sha256 must be a SHA-256 hex digest")
+        if not isinstance(chain_id, int) or chain_id <= 0:
+            raise ValueError("chain_id must be a positive integer")
+        if not actor:
+            raise ValueError("actor must be non-empty")
+        recorded = recorded_at or _utc_now()
+        with self._connect() as connection:
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                connection.execute(
+                    """
+                    INSERT INTO auth_challenges(
+                        challenge_id, purpose, nonce, wallet_address, domain, uri,
+                        chain_id, message_sha256, issued_at, expires_at, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        challenge_id, purpose, nonce, wallet_address, domain, uri,
+                        chain_id, message_sha256, issued_at, expires_at, recorded,
+                    ),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO audit_log(
+                        recorded_at, actor, action, record_type, record_id, details_json
+                    ) VALUES (?, ?, 'ISSUE', 'auth_challenge', ?, ?)
+                    """,
+                    (
+                        recorded,
+                        actor,
+                        challenge_id,
+                        json.dumps(
+                            {"purpose": purpose, "domain": domain},
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
+                    ),
+                )
+                connection.execute("COMMIT")
+            except sqlite3.IntegrityError as exc:
+                connection.execute("ROLLBACK")
+                raise ConflictError("authentication challenge already exists") from exc
+            except Exception:
+                connection.execute("ROLLBACK")
+                raise
+
+    def get_auth_challenge(self, challenge_id: str) -> dict[str, Any]:
+        challenge_id = str(challenge_id or "").strip()
+        if not challenge_id:
+            raise ValidationError("challenge_id is required")
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT challenge_id, purpose, nonce, wallet_address, domain, uri,
+                       chain_id, message_sha256, issued_at, expires_at,
+                       consumed_at, authorization_status, authorization_json, created_at
+                FROM auth_challenges
+                WHERE challenge_id = ?
+                """,
+                (challenge_id,),
+            ).fetchone()
+        if row is None:
+            raise NotFoundError(challenge_id)
+        return {
+            "challenge_id": row["challenge_id"],
+            "purpose": row["purpose"],
+            "nonce": row["nonce"],
+            "wallet_address": row["wallet_address"],
+            "domain": row["domain"],
+            "uri": row["uri"],
+            "chain_id": int(row["chain_id"]),
+            "message_sha256": row["message_sha256"],
+            "issued_at": row["issued_at"],
+            "expires_at": row["expires_at"],
+            "consumed_at": row["consumed_at"],
+            "authorization_status": row["authorization_status"],
+            "authorization": json.loads(row["authorization_json"]) if row["authorization_json"] else None,
+            "created_at": row["created_at"],
+        }
+
+    def authorize_auth_challenge(
+        self,
+        challenge_id: str,
+        *,
+        nonce: str,
+        message_sha256: str,
+        authorization: Mapping[str, Any],
+        now: str,
+        actor: str = "auth",
+    ) -> bool:
+        challenge_id = str(challenge_id or "").strip()
+        nonce = str(nonce or "").strip()
+        message_sha256 = str(message_sha256 or "").strip().lower()
+        actor = str(actor).strip()
+        now = str(now).strip()
+        if not challenge_id or not nonce or len(message_sha256) != 64 or not actor or not now:
+            raise ValueError("invalid authentication challenge authorization")
+        payload_json = _canonical_json(dict(authorization))
+        with self._connect() as connection:
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                cursor = connection.execute(
+                    """
+                    UPDATE auth_challenges
+                    SET consumed_at = ?,
+                        authorization_status = 'AUTHORIZED',
+                        authorization_json = ?
+                    WHERE challenge_id = ?
+                      AND purpose = 'wallet_siwe'
+                      AND nonce = ?
+                      AND message_sha256 = ?
+                      AND consumed_at IS NULL
+                      AND authorization_status = 'PENDING'
+                      AND expires_at > ?
+                    """,
+                    (now, payload_json, challenge_id, nonce, message_sha256, now),
+                )
+                changed = cursor.rowcount == 1
+                if changed:
+                    connection.execute(
+                        """
+                        INSERT INTO audit_log(
+                            recorded_at, actor, action, record_type, record_id, details_json
+                        ) VALUES (?, ?, 'AUTHORIZE', 'auth_challenge', ?, ?)
+                        """,
+                        (
+                            now,
+                            actor,
+                            challenge_id,
+                            json.dumps({"authorization_status": "AUTHORIZED"}, separators=(",", ":")),
+                        ),
+                    )
+                connection.execute("COMMIT")
+                return changed
+            except Exception:
+                connection.execute("ROLLBACK")
+                raise
 
     @staticmethod
     def _stored_identity(row: sqlite3.Row) -> StoredRecord:
