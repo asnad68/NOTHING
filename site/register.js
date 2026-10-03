@@ -320,7 +320,7 @@
   }
 
   async function apiJson(path, options = {}) {
-    if (!API_BASE) throw new Error("NOTHING enrollment API is not configured on this deployment.");
+    if (!API_BASE) throw new Error("VERQIVIA enrollment API is not configured on this deployment.");
     const response = await fetch(API_BASE + path, {
       ...options,
       headers: {"Accept":"application/json","Content-Type":"application/json", ...(options.headers || {})}
@@ -402,7 +402,7 @@
         data: invoice.routing_reference ? utf8Hex("NOTHING|" + invoice.routing_reference) : "0x"
       }]
     });
-    $("payment-status").textContent = "Transaction submitted. NOTHING is verifying it on-chain…";
+    $("payment-status").textContent = "Transaction submitted. VERQIVIA is verifying it on-chain…";
     const response = await apiJson("/v1/enrollment/complete", {
       method:"POST",
       body:JSON.stringify({
@@ -419,7 +419,7 @@
   }
 
   function badgeSvg(id, name, verifyUrl) {
-    const label = xmlEscape((name || "NOTHING").slice(0, 44));
+    const label = xmlEscape((name || "VERQIVIA").slice(0, 44));
     const safeId = xmlEscape(id);
     const href = htmlEscape(verifyUrl);
     return '<a xmlns="http://www.w3.org/2000/svg" href="' + href + '" target="_blank" rel="noopener noreferrer">' +
@@ -428,7 +428,7 @@
       '<rect x="18" y="18" width="484" height="144" rx="28" fill="#f7f7f4"/>' +
       '<circle cx="92" cy="90" r="43" fill="#333"/>' +
       '<text x="92" y="102" text-anchor="middle" font-size="48" font-family="Arial,sans-serif" fill="#fff">◇</text>' +
-      '<text x="155" y="70" font-family="Arial,sans-serif" font-size="18" font-weight="700" fill="#111">NOTHING</text>' +
+      '<text x="155" y="70" font-family="Arial,sans-serif" font-size="18" font-weight="700" fill="#111">VERQIVIA</text>' +
       '<text x="155" y="98" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#111">' + label + '</text>' +
       '<text x="155" y="124" font-family="monospace" font-size="14" fill="#555">' + safeId + '</text>' +
       '<text x="470" y="139" text-anchor="end" font-family="Arial,sans-serif" font-size="10" fill="#777">CLICK TO VERIFY</text>' +
