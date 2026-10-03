@@ -4,19 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://accounts.google.com; style-src 'self'; img-src 'self' data:; connect-src 'self' https: https://accounts.google.com; frame-src https://accounts.google.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'">
-<meta name="description" content="Register a business identity with NOTHING.">
-<title>Register — NOTHING</title>
+<meta name="description" content="Register a business identity with VERQIVIA.">
+<title>Register — VERQIVIA</title>
 <link rel="stylesheet" href="./assets/styles.css">
 <link rel="stylesheet" href="./register.css">
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="./">◇ NOTHING</a>
-  <nav aria-label="Primary"><a href="./verify.html">Verify</a><a class="active" href="./register.html">Register</a><a href="./privacy.html">Privacy</a><a href="https://github.com/asnad68/NOTHING" rel="noreferrer">Repository</a></nav>
+  <a class="brand" href="./">◇ VERQIVIA</a>
+  <nav aria-label="Primary"><a href="./verify.html">Verify</a><a class="active" href="./register.html">Register</a><a href="./privacy.html">Privacy</a><a href="https://github.com/asnad68/VERQIVIA" rel="noreferrer">Repository</a></nav>
 </header>
 <main class="shell register-shell">
   <section class="register-head">
-    <div><div class="eyebrow">NOTHING REGISTRATION</div><h1>Create a business identity record</h1><p class="lead">Registration records what the organization asserts. Payment unlocks the registration service; it does not automatically make a claim independently verified.</p></div>
+    <div><div class="eyebrow">VERQIVIA REGISTRATION</div><h1>Create a business identity record</h1><p class="lead">Registration records what the organization asserts. Payment unlocks the registration service; it does not automatically make a claim independently verified.</p></div>
     <div id="registration-state" class="status status-neutral">SERVICE CHECK</div>
   </section>
   <section class="panel register-grid">
@@ -50,7 +50,7 @@
         <div id="domain-challenge" class="challenge-box" hidden>
           <div class="mini-label">DNS TXT RECORD</div>
           <div><code id="domain-record-name">_nothing-challenge.example.com</code></div>
-          <div><code id="domain-record-value">NOTHING-DOMAIN-VERIFICATION=…</code></div>
+          <div><code id="domain-record-value">VERQIVIA-DOMAIN-VERIFICATION=…</code></div>
           <p id="domain-instructions" class="muted">Add this TXT record to the organization DNS, then verify it.</p>
         </div>
         <div class="auth-buttons">
@@ -76,7 +76,7 @@
         <button id="pay" class="primary full">Pay registration fee</button>
         <div id="payment-status" class="note" aria-live="polite"></div>
       </div>
-      <div class="warning-panel panel"><strong>Never enter a seed phrase or private key.</strong><div>NOTHING never requires a seed phrase or private key. Wallet sign-in asks only for a readable sign-in signature; payment, when enabled, is a separate transaction.</div></div>
+      <div class="warning-panel panel"><strong>Never enter a seed phrase or private key.</strong><div>VERQIVIA never requires a seed phrase or private key. Wallet sign-in asks only for a readable sign-in signature; payment, when enabled, is a separate transaction.</div></div>
       <button id="demo" class="secondary full">Preview result (demo)</button>
     </div>
   </section>
@@ -84,11 +84,11 @@
     <div class="success-mark">◇</div><div><div class="eyebrow">IDENTITY CREATED</div><div id="result-id" class="result-id">NTH-000000</div><h2 id="result-name">—</h2><p id="result-copy">—</p></div>
   </section>
   <section id="hologram" class="panel" hidden>
-    <div class="section-heading"><div><div class="eyebrow">NOTHING HOLOGRAM</div><h2>Public identity marker</h2></div><span class="status status-neutral">WEB BADGE</span></div>
-    <div class="hologram-layout"><div id="badge-preview" class="badge-preview"></div><div><p>Place this marker after the brand name. Clicking it opens the public NOTHING verification record.</p><textarea id="badge-snippet" rows="5" readonly></textarea><button id="download-badge" class="secondary">Download SVG badge</button></div></div>
+    <div class="section-heading"><div><div class="eyebrow">VERQIVIA HOLOGRAM</div><h2>Public identity marker</h2></div><span class="status status-neutral">WEB BADGE</span></div>
+    <div class="hologram-layout"><div id="badge-preview" class="badge-preview"></div><div><p>Place this marker after the brand name. Clicking it opens the public VERQIVIA verification record.</p><textarea id="badge-snippet" rows="5" readonly></textarea><button id="download-badge" class="secondary">Download SVG badge</button></div></div>
   </section>
 </main>
-<footer class="footer shell"><span>NOTHING v0.1 · Prototype / Research · Payment is deployment-gated.</span><a href="./verify.html">Verify →</a></footer>
+<footer class="footer shell"><span>VERQIVIA v0.1 · Prototype / Research · Payment is deployment-gated.</span><a href="./verify.html">Verify →</a></footer>
 <script src="./config.js"></script><script src="./register.js" defer></script>
 </body>
 </html>
