@@ -1,15 +1,15 @@
-# NOTHING Browser Extension
+# VERQIVIA Browser Extension
 
-Cross-browser MV3 extension for the NOTHING business identity and verification project.
+Cross-browser MV3 extension for the VERQIVIA business identity and verification project.
 
 ## What it does
 
 1. Inspects the active page only after a user click.
 2. Pre-fills a business/brand registration draft from page title, canonical URL, hostname and selected public metadata.
 3. Stores the draft locally in browser storage.
-4. Opens the deployed NOTHING registration web page.
+4. Opens the deployed VERQIVIA registration web page.
 5. Connects a compatible EIP-1193/EIP-6963 wallet on the registration page.
-6. Opens public verification records by NOTHING ID.
+6. Opens public verification records by VERQIVIA ID.
 
 The public deployment keeps wallet connection disabled by default. A deployment must explicitly enable wallet access after security review.
 
@@ -19,13 +19,13 @@ The extension is intentionally **not a wallet**. MetaMask, Trust Wallet or anoth
 
 The production flow, when explicitly enabled after deployment security review, is:
 
-registration draft -> server-issued invoice -> wallet transaction -> server-side chain verification -> Payment Core settlement -> NOTHING ID -> public Verify page.
+registration draft -> server-issued invoice -> wallet transaction -> server-side chain verification -> Payment Core settlement -> VERQIVIA ID -> public Verify page.
 
-A personal EVM wallet can be the receiving address. The invoice carries a unique routing reference. The wallet transaction includes the UTF-8 payload `NOTHING|<routing_reference>` in EVM calldata, and the server verifies it before settling the invoice. Amount alone is never used as the identity of a payment.
+A personal EVM wallet can be the receiving address. The invoice carries a unique routing reference. The wallet transaction includes the UTF-8 payload `VERQIVIA|<routing_reference>` in EVM calldata, and the server verifies it before settling the invoice. Amount alone is never used as the identity of a payment.
 
 ## Identity and hologram semantics
 
-Payment does not equal independent verification. A successful enrollment creates a NOTHING identity record whose submitted claims are marked `SELF-CLAIMED` until independent verification events are recorded.
+Payment does not equal independent verification. A successful enrollment creates a VERQIVIA identity record whose submitted claims are marked `SELF-CLAIMED` until independent verification events are recorded.
 
 The first badge is an SVG web marker linking to `verify.html?id=NTH-XXXXXX`. It is not an on-chain NFT. A future NFT implementation requires a real minting adapter and recorded token identifier.
 
