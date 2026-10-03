@@ -39,13 +39,13 @@ It is also:
 
 > **Which digital identity actually belongs to it, and what is authorized?**
 
-NOTHING explores a common verification layer that can connect these relationships and make them easier for both humans and machines to verify.
+VERQIVIA explores a common verification layer that can connect these relationships and make them easier for both humans and machines to verify.
 
 ---
 
 ## The Core Idea
 
-NOTHING is designed around five principles:
+VERQIVIA is designed around five principles:
 
 **Identity** — Give a business a stable digital identity reference.
 
@@ -108,7 +108,7 @@ It is a project-level identifier that can reference a business identity record a
 
 ## Claim-Based Verification
 
-NOTHING is intentionally designed to avoid a single, misleading "trust score".
+VERQIVIA is intentionally designed to avoid a single, misleading "trust score".
 
 Different claims may have different statuses.
 
@@ -195,7 +195,7 @@ The visual mark only has meaning when it points to a verifiable record.
 
 ## For Machines
 
-NOTHING is intended to be machine-readable as well as human-readable.
+VERQIVIA is intended to be machine-readable as well as human-readable.
 
 A future API may allow software, marketplaces, websites and AI agents to resolve a VERQIVIA ID and inspect its claims.
 
@@ -277,11 +277,11 @@ VERQIVIA does not claim to be:
 
 References to companies or standards do not imply endorsement, partnership or authorization.
 
-The project is independent and is **not affiliated with, endorsed by, or sponsored by Nothing Technology Limited**.
+The project is independent and is **not affiliated with, endorsed by, or sponsored by any third-party brand**.
 
 Third-party trademarks remain the property of their respective owners.
 
-**Brand-clearance note:** before filing or materially expanding commercial use of the exact word mark `NOTHING`, complete a professional trademark/name-clearance review for the intended goods/services and jurisdictions. The project does not currently represent `NOTHING` as a registered trademark for this project.
+**Brand-clearance note:** before filing or materially expanding commercial use of the exact word mark `VERQIVIA`, complete a professional trademark/name-clearance review for the intended goods/services and jurisdictions. The project does not currently represent `VERQIVIA` as a registered trademark for this project.
 
 ---
 
@@ -298,7 +298,7 @@ Payment processing is intentionally frozen while the identity and verification c
 
 ## Technology Direction
 
-NOTHING aims to build on open standards rather than create unnecessary proprietary systems.
+VERQIVIA aims to build on open standards rather than create unnecessary proprietary systems.
 
 Relevant areas of research include:
 
@@ -412,7 +412,7 @@ The project should earn trust through transparent verification rather than throu
 The prototype now separates data contracts, protocol logic, the human verification view and the future API contract:
 
 ```text
-NOTHING/
+VERQIVIA/
 ├── schema/
 │   ├── identity.schema.json
 │   ├── evidence.schema.json
