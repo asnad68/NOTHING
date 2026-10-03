@@ -1,8 +1,8 @@
-# NOTHING Registration Authentication & Authorization
+# VERQIVIA Registration Authentication & Authorization
 
 ## Required trust model
 
-NOTHING must never treat a successful login as proof that the logged-in person is entitled to register a brand.
+VERQIVIA must never treat a successful login as proof that the logged-in person is entitled to register a brand.
 
 Authentication establishes a principal. Authorization establishes whether that principal may make an official organization claim.
 
@@ -88,7 +88,7 @@ Controlled domain: example.com
 Result: reject official registration
 ```
 
-Where a legal entity and brand have different names, NOTHING should use an authoritative company/trademark/registry source or a manual review path instead of weak string matching.
+Where a legal entity and brand have different names, VERQIVIA should use an authoritative company/trademark/registry source or a manual review path instead of weak string matching.
 
 ## Payment separation
 
