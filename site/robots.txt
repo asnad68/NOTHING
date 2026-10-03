@@ -1,4 +1,4 @@
 User-agent: *
 Disallow:
 
-Sitemap: /NOTHING/sitemap.xml
+Sitemap: /VERQIVIA/sitemap.xml
