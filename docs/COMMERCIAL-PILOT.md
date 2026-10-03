@@ -1,4 +1,4 @@
- # VERQIVIA — Commercial Pilot Framework
+# VERQIVIA — Commercial Pilot Framework
 
 ## Purpose
 
@@ -22,7 +22,7 @@ No participant should be described publicly as a customer, partner or endorser u
 A first pilot can be limited to:
 
 1. one organization;
-2. one Nothing ID;
+2. one VERQIVIA ID;
 3. up to five business claims;
 4. a small set of supporting evidence;
 5. one or more versioned verification procedures;
