@@ -2,7 +2,7 @@
 
 ## Scope
 
-NOTHING is an experimental research project. It is not currently a production identity, financial, legal, or security authority.
+VERQIVIA is an experimental research project. It is not currently a production identity, financial, legal, or security authority.
 
 ## Reporting
 
