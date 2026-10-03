@@ -1,4 +1,4 @@
-// Deployment configuration for the public NOTHING web application.
+// Deployment configuration for the public VERQIVIA web application.
 window.NOTHING_API_BASE = "";
 // Set this to the public HTTPS API origin when live read access is deployed.
 window.NOTHING_ENROLLMENT_API_BASE = "";
