@@ -413,7 +413,7 @@
         "<strong>Status synchronization note.</strong>" +
         "<p>The demo identity record and its current verification event disagree for " +
         escapeHtml(mismatches.map((claim) => claim.claim_id).join(", ")) +
-        ". NOTHING exposes the mismatch instead of silently rewriting the identity record.</p>";
+        ". VERQIVIA exposes the mismatch instead of silently rewriting the identity record.</p>";
     } else {
       warning.hidden = true;
       warning.textContent = "";
