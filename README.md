@@ -154,7 +154,7 @@ The exact verification rules will evolve as the project is tested.
 
 ## VERQIVIA Passport™
 
-**Nothing Passport** is the working name for the user-facing business identity record.
+**VERQIVIA Passport** is the working name for the user-facing business identity record.
 
 A future passport may connect:
 
