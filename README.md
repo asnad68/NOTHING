@@ -1,14 +1,16 @@
-# NOTHING
+# VERQIVIA
 
 ## Business Identity & Verification Infrastructure
 
 > **Your brand is yours. Your identity travels with it.**
 
-NOTHING is an experimental project exploring a portable, interoperable and machine-verifiable identity layer for businesses, brands, digital channels and authorized agents.
+VERQIVIA is an experimental project exploring a portable, interoperable and machine-verifiable identity layer for businesses, brands, digital channels and authorized agents.
 
-The project is being developed under the working name:
+The project is now developed under the project name:
 
-**The Company That Does Nothing**
+**VERQIVIA**
+
+The v0.1 protocol identifiers (`NTH-*`) and `NOTHING_*` environment-variable namespace are retained for backward compatibility.
 
 ---
 
@@ -61,7 +63,7 @@ The long-term vision is:
 
 ### Official organization control
 
-NOTHING separates authentication from authorization.
+VERQIVIA separates authentication from authorization.
 
 A Google account or crypto wallet can authenticate an operator, but neither one alone proves the operator is entitled to represent a company or brand. Official organization registration therefore requires independent organization-domain control and a brand/domain binding decision.
 
@@ -85,13 +87,13 @@ See `docs/REGISTRATION-AUTHORIZATION.md` for the full policy.
 
 ---
 
-## NOTHING ID
+## Legacy NTH Identity ID
 
 Each identity may receive a stable reference such as:
 
 `NTH-000001`
 
-A Nothing ID is **not**:
+A VERQIVIA ID is **not**:
 
 - A government registration number
 - A trademark registration
@@ -150,7 +152,7 @@ The exact verification rules will evolve as the project is tested.
 
 ---
 
-## Nothing Passport™
+## VERQIVIA Passport™
 
 **Nothing Passport** is the working name for the user-facing business identity record.
 
@@ -173,7 +175,7 @@ The Passport is intended to make these relationships easier to understand and ve
 
 ---
 
-## Nothing Mark ◇
+## VERQIVIA Mark ◇
 
 The project also explores a simple visual marker:
 
@@ -195,7 +197,7 @@ The visual mark only has meaning when it points to a verifiable record.
 
 NOTHING is intended to be machine-readable as well as human-readable.
 
-A future API may allow software, marketplaces, websites and AI agents to resolve a Nothing ID and inspect its claims.
+A future API may allow software, marketplaces, websites and AI agents to resolve a VERQIVIA ID and inspect its claims.
 
 Conceptual example:
 
@@ -245,13 +247,13 @@ No private keys, passwords or production secrets belong in this repository.
 
 ## Privacy Principles
 
-NOTHING follows a simple rule:
+VERQIVIA follows a simple rule:
 
 > **Collect less. Prove more.**
 
 The prototype should avoid collecting unnecessary personal information.
 
-NOTHING is not intended to become a repository of passports, identity documents, banking information or other highly sensitive personal data.
+VERQIVIA is not intended to become a repository of passports, identity documents, banking information or other highly sensitive personal data.
 
 Privacy requirements will be reviewed for each jurisdiction before real-world commercial deployment.
 
@@ -261,7 +263,7 @@ Privacy requirements will be reviewed for each jurisdiction before real-world co
 
 This repository contains an experimental prototype and research project.
 
-NOTHING does not claim to be:
+VERQIVIA does not claim to be:
 
 - A government authority
 - A trademark office
@@ -342,7 +344,7 @@ Define the problem, terminology, principles and legal boundaries.
 
 ### Phase 1 — Identity Schema
 
-Define the structure of a Nothing ID and its claims.
+Define the structure of a VERQIVIA ID and its claims.
 
 ### Phase 2 — Verification + Cryptographic Proof
 
@@ -392,7 +394,7 @@ If the prototype cannot achieve these three goals simply and reliably, the produ
 
 ## Development Philosophy
 
-NOTHING follows:
+VERQIVIA follows:
 
 > **Prove before spending.**  
 > **Verify before claiming.**  
@@ -513,12 +515,12 @@ See `docs/COMMERCIAL-PILOT.md` and `docs/PILOT-AGREEMENT-TEMPLATE.md`.
 
 ## Status
 
-**Project:** NOTHING  
+**Project:** VERQIVIA  
 **Version:** 0.1  
 **Stage:** Prototype / Research  
 **Cost Target:** $0 for initial proof-of-concept  
 **Primary Concept:** Business Identity Verification  
-**Working Product Name:** Nothing Passport™  
+**Working Product Name:** VERQIVIA Passport™  
 **Human-facing Marker:** ◇
 
 ---
