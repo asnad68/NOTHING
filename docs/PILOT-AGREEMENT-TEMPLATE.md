@@ -1,4 +1,4 @@
-# NOTHING — Pilot Agreement Template
+# VERQIVIA — Pilot Agreement Template
 
 > **Important:** This is a commercial starting template, not legal advice. Before signature, the parties should have the document reviewed for the jurisdictions, data, liability, tax, intellectual-property and regulatory issues that actually apply.
 
@@ -14,13 +14,13 @@
 
 ## 2. Purpose
 
-The parties intend to run a limited pilot of the NOTHING business identity and verification system to evaluate a specified business identity or verification workflow.
+The parties intend to run a limited pilot of the VERQIVIA business identity and verification system to evaluate a specified business identity or verification workflow.
 
 The pilot is experimental and does not constitute government certification, legal advice, regulatory approval, financial authorization or a guarantee that any underlying business claim is true.
 
 ## 3. Scope
 
-**Organization / Nothing ID:** [DESCRIPTION / ID]
+**Organization / VERQIVIA ID:** [DESCRIPTION / ID]
 
 **Claims in scope:** [LIST]
 
@@ -69,7 +69,7 @@ Unless otherwise agreed in writing:
 
 - each party retains ownership of its pre-existing materials;
 - Participant-owned data remains subject to the Participant's rights;
-- the Provider retains ownership of the NOTHING software, schemas, procedures and generic improvements;
+- the Provider retains ownership of the VERQIVIA software, schemas, procedures and generic improvements;
 - any project-specific deliverables are licensed or assigned only as expressly stated.
 
 **Special IP terms:** [INSERT]
